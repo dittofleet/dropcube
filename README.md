@@ -64,20 +64,6 @@ Links print to stdout, one per file in argument order, pipe-friendly for agents.
 
 Opening `<link>/remove` in a browser deletes the file too. The link is the whole capability: holding it grants viewing and removal of that one file, nothing more.
 
-## Configuration
-
-`~/.config/dropcube/config.json` (respects `$XDG_CONFIG_HOME`):
-
-```json
-{
-  "schemaVersion": 1,
-  "endpoint": "https://dropcube.<you>.workers.dev",
-  "token": "<upload token>"
-}
-```
-
-`DROPCUBE_ENDPOINT` and `DROPCUBE_TOKEN` env vars override the file, and suffice on their own, so CI jobs can skip the config file entirely.
-
 ## Agent skill
 
 `skills/` holds an instruction snippet that teaches coding agents to
@@ -91,7 +77,9 @@ npx skills add https://github.com/sylophi/dropcube
 
 ## Updating
 
-`dropcube` checks once per day for new releases and prints a hint to stderr when an update is available. Run `dropcube update` to upgrade in place.
+`dropcube` checks once per day for new releases and prints a hint to stderr when an update is available.
+
+Run `dropcube update` to upgrade.
 
 The check is automatically skipped when:
 
@@ -109,24 +97,16 @@ dropcube uninstall --yes    # skip prompt
 
 Removes the binary, `~/.config/dropcube/`, and `~/.local/share/dropcube/` (update cache). The Cloudflare worker, bucket, and uploaded files are not touched.
 
-## Security model
+## Configuration
 
-- **Upload**: bearer token checked with a constant-time compare. Write-only by construction: the worker has no read/list/delete routes for uploaders.
-- **View**: `GET /f/<id>/<name>`. The 64-bit random id makes links unguessable (each guess costs a network round trip against a 1-in-2^64 chance), and the link carries nothing else to tamper with.
-- **Remove**: `GET /f/<id>/<name>/remove`, also via `dropcube remove <link>`. Removal needs the link, not the token, so a leaked upload token still cannot delete anything.
-- **Retention**: everything expires 30 days after upload. The R2 lifecycle rule deletes the object, and the worker stops serving at the deadline even before the deletion sweep runs.
-- Filenames are sanitized to a safe character set. Uploads land under a fresh random prefix so names never collide or overwrite.
+`~/.config/dropcube/config.json` (respects `$XDG_CONFIG_HOME`):
 
-This is deliberately "capability URL" security (like a Google Docs share link), appropriate for build logs and reports, not for secrets. Don't send credentials through it.
-
-## Development
-
-```sh
-go build -o dist/dropcube .            # source builds report version "dev"
-
-# Worker: local dev server with an in-memory R2 (no Cloudflare login needed)
-cd worker
-printf 'UPLOAD_TOKEN=dev-token\n' > .dev.vars
-bunx wrangler dev --port 8787
-DROPCUBE_ENDPOINT=http://localhost:8787 DROPCUBE_TOKEN=dev-token ../dist/dropcube upload ../README.md
+```json
+{
+  "schemaVersion": 1,
+  "endpoint": "https://dropcube.<you>.workers.dev",
+  "token": "<upload token>"
+}
 ```
+
+`DROPCUBE_ENDPOINT` and `DROPCUBE_TOKEN` env vars override the file.
