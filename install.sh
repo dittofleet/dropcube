@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="sylophi/dropcube"
+REPO="dittofleet/dropcube"
 DEST="${DROPCUBE_INSTALL_DIR:-$HOME/.local/bin}"
 
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')

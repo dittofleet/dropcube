@@ -38,7 +38,7 @@ Optional: to serve from your own (sub)domain instead of workers.dev, add it in t
 ## Installing the CLI
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sylophi/dropcube/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/dittofleet/dropcube/main/install.sh | sh
 ```
 
 Installs the latest release to `~/.local/bin/dropcube` (override with `DROPCUBE_INSTALL_DIR`) and sets up `~/.config/dropcube/config.json`. When a terminal is attached the installer prompts for your endpoint and token (press Enter to skip), and otherwise it creates a starter config for you to fill in.
@@ -46,7 +46,7 @@ Installs the latest release to `~/.local/bin/dropcube` (override with `DROPCUBE_
 **Provisioning a remote machine in one line**: pass the endpoint and token to the installer and it writes a ready-to-use config instead of the starter. The assignments go on the `sh` side of the pipe, because a prefix before `curl` would never reach the shell running the script:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sylophi/dropcube/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/dittofleet/dropcube/main/install.sh \
   | DROPCUBE_ENDPOINT=https://dropcube.<you>.workers.dev \
     DROPCUBE_TOKEN=<upload token> sh
 ```
@@ -72,7 +72,7 @@ produce one you should see from elsewhere). Install with
 [Vercel skills](https://github.com/vercel-labs/skills) (skills.sh):
 
 ```sh
-npx skills add https://github.com/sylophi/dropcube
+npx skills add https://github.com/dittofleet/dropcube
 ```
 
 ## Updating

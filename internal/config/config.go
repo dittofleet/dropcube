@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sylophi/dropcube/internal/xdg"
+	"github.com/dittofleet/dropcube/internal/xdg"
 )
 
 const SchemaVersion = 1

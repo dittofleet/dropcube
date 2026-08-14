@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/sylophi/dropcube/internal/release"
+	"github.com/dittofleet/dropcube/internal/release"
 )
 
 const (

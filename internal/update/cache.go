@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sylophi/dropcube/internal/xdg"
+	"github.com/dittofleet/dropcube/internal/xdg"
 )
 
 type Cache struct {

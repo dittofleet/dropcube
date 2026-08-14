@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sylophi/dropcube/internal/xdg"
+	"github.com/dittofleet/dropcube/internal/xdg"
 	"golang.org/x/term"
 )
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sylophi/dropcube/internal/release"
+	"github.com/dittofleet/dropcube/internal/release"
 	"golang.org/x/term"
 )
 

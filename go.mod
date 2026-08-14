@@ -1,4 +1,4 @@
-module github.com/sylophi/dropcube
+module github.com/dittofleet/dropcube
 
 go 1.26.5
 

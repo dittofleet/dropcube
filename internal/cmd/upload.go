@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sylophi/dropcube/internal/config"
+	"github.com/dittofleet/dropcube/internal/config"
 )
 
 const uploadUsage = "usage: dropcube upload <file>..."

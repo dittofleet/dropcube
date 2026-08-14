@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sylophi/dropcube/internal/cmd"
-	"github.com/sylophi/dropcube/internal/config"
-	"github.com/sylophi/dropcube/internal/update"
+	"github.com/dittofleet/dropcube/internal/cmd"
+	"github.com/dittofleet/dropcube/internal/config"
+	"github.com/dittofleet/dropcube/internal/update"
 )
 
 var errUnknownCommand = errors.New("unknown command")
