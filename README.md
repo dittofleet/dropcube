@@ -1,7 +1,5 @@
 # dropcube
 
-**NOTE** this project was created for personal use. I am unable to guarantee the quality or polish that one may expect from a properly maintained project.
-
 Dropbox, minus almost everything: a write-only file drop for agents on remote machines, with capability-URL viewing for you.
 
 Agents run `dropcube upload <file>` and get back a private link to send you. The upload token can only write. It can never read, list, or delete files, so a leaked token on a remote machine exposes nothing. View links are unguessable and expire server-side.
