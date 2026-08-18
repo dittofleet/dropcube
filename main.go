@@ -19,6 +19,7 @@ const usage = `Usage: dropcube <command>
 Commands:
   upload <file>...   Upload files, printing one view link per line
                      (links and files expire after 30 days)
+  keep <link>...     Stop uploads expiring, keeping the same links
   remove <link>...   Delete uploads by their view links
   version            Print the installed version
   update             Download and install the latest version
@@ -63,6 +64,8 @@ func dispatch(args []string) error {
 	switch args[0] {
 	case "upload":
 		return cmd.Upload(args[1:])
+	case "keep":
+		return cmd.Keep(args[1:])
 	case "remove":
 		return cmd.Remove(args[1:])
 	case "update":

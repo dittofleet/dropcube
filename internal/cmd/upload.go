@@ -111,9 +111,9 @@ func uploadFile(client *http.Client, cfg *config.Config, path string) (string, e
 		return "", err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	body := readBody(resp)
 	if resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", httpError(resp.StatusCode, body)
 	}
 	link := strings.TrimSpace(string(body))
 	if u, err := url.Parse(link); err != nil || !u.IsAbs() || u.Host == "" {

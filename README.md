@@ -18,6 +18,7 @@ Requires a Cloudflare account (free tier is plenty: R2 has 10 GB storage free wi
 cd worker
 bunx wrangler login
 bunx wrangler r2 bucket create dropcube
+bunx wrangler r2 bucket create dropcube-keep   # holds files you choose to keep
 bunx wrangler deploy                      # prints https://dropcube.<you>.workers.dev
 # Until the secret below is set, the worker refuses every request with 503.
 
@@ -27,7 +28,9 @@ bunx wrangler secret put UPLOAD_TOKEN     # paste it when prompted
 
 # Auto-delete uploads after 30 days. Keep this equal to RETENTION_DAYS in
 # worker/src/index.js, which is what the worker tells browsers and what it
-# answers once the deadline passes but before the deletion sweep runs.
+# answers once the deadline passes but before the deletion sweep runs. The
+# rule goes on this bucket only: `dropcube keep` works by moving a file to
+# dropcube-keep, which has no rule.
 bunx wrangler r2 bucket lifecycle add dropcube expire-after-30d --expire-days 30
 ```
 
@@ -55,12 +58,15 @@ Supported platforms: macOS (arm64, x64), Linux (arm64, x64).
 
 ```sh
 dropcube upload report.html    # prints one view link per file
+dropcube keep <link>           # stop a file expiring, same link
 dropcube remove <link>         # delete an upload early
 ```
 
 Links print to stdout, one per file in argument order, pipe-friendly for agents. Anyone with a link can view for 30 days, then the file is deleted and the link dies with it. Nobody can enumerate or guess links.
 
-Opening `<link>/remove` in a browser deletes the file too. The link is the whole capability: holding it grants viewing and removal of that one file, nothing more.
+Opening `<link>/keep` or `<link>/remove` in a browser does the same as those commands. The link is the whole capability: holding it grants viewing, keeping, and removal of that one file, nothing more.
+
+A kept file has no deadline and no way to look it up other than the link you already have, so keep the link somewhere you will find it again. Nothing else can list your uploads.
 
 ## Agent skill
 
@@ -93,7 +99,7 @@ dropcube uninstall          # prompts for confirmation
 dropcube uninstall --yes    # skip prompt
 ```
 
-Removes the binary, `~/.config/dropcube/`, and `~/.local/share/dropcube/` (update cache). The Cloudflare worker, bucket, and uploaded files are not touched.
+Removes the binary, `~/.config/dropcube/`, and `~/.local/share/dropcube/` (update cache). The Cloudflare worker, buckets, and uploaded files are not touched.
 
 ## Configuration
 
