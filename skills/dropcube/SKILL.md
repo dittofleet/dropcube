@@ -23,3 +23,4 @@ Prints one URL per file to stdout (multiple files allowed, links in argument ord
 - You cannot list or read back previous uploads, and a lost link cannot be recovered. Keep the printed URL.
 - The filename becomes part of the link and the browser's download name, so give files meaningful names before uploading.
 - `command not found` / `config not found` / `still has placeholder values` / `HTTP 401`: notify the user.
+- Do not upload large files (>5MB) without confirming with the user.
