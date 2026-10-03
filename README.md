@@ -1,3 +1,5 @@
+<img src="assets/icon.svg" width="80" alt="dropcube icon">
+
 # dropcube
 
 Dropbox, minus almost everything: a write-only file drop for agents on remote machines, with capability-URL viewing for you.
