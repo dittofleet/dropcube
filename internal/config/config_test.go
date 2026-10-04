@@ -59,10 +59,34 @@ func TestDeploymentPlaceholderNamesTheSection(t *testing.T) {
 	}
 }
 
-func TestLegacyPrivateSectionPointsAtItsReplacement(t *testing.T) {
-	writeConfig(t, `{"schemaVersion":1,"endpoint":"https://a.example","token":"main","private":{"endpoint":"https://b.example"}}`)
-	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "deployments.private") {
+func TestUnknownKeysAreErrors(t *testing.T) {
+	for _, body := range []string{
+		`{"schemaVersion":1,"endpoint":"https://a.example","token":"main","private":{"endpoint":"https://b.example"}}`,
+		`{"schemaVersion":1,"endpoint":"https://a.example","token":"main","deploymnets":{}}`,
+	} {
+		writeConfig(t, body)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "unknown field") {
+			t.Errorf("%s: err = %v", body, err)
+		}
+	}
+}
+
+func TestDeploymentsCannotShareAnOrigin(t *testing.T) {
+	writeConfig(t, `{"schemaVersion":1,"endpoint":"https://a.example","token":"main","deployments":{"work":{"endpoint":"https://A.example:443/x"}}}`)
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "same endpoint as default") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestNullDeploymentAndMultilineDescription(t *testing.T) {
+	writeConfig(t, `{"schemaVersion":1,"endpoint":"https://a.example","token":"main","deployments":{"work":null}}`)
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "deployments.work: missing endpoint") {
+		t.Fatalf("err = %v", err)
+	}
+	writeConfig(t, `{"schemaVersion":1,"endpoint":"https://a.example","token":"main","description":"Public.\n\tUse  freely."}`)
+	cfg, err := Load()
+	if err != nil || cfg.Description != "Public. Use freely." {
+		t.Fatalf("description = %q, err = %v", cfg.Description, err)
 	}
 }
 

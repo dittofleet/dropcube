@@ -26,27 +26,34 @@ func extractBoolFlag(args []string, name string) (rest []string, set bool) {
 
 // extractValueFlag removes `--name value` or `--name=value` from args and
 // returns the remaining args plus the value ("" when the flag is absent).
-// A flag given with an empty value is an error rather than reading as
-// absent: `--to "$UNSET"` must not quietly mean the default.
+// Anything ambiguous is an error rather than a guess: an empty value
+// (`--to "$UNSET"` must not quietly mean the default), a value that is
+// another flag, or the flag given twice.
 func extractValueFlag(args []string, name string) (rest []string, value string, err error) {
 	rest = make([]string, 0, len(args))
 	flag := "--" + name
+	seen := false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
+		var v string
 		switch {
-		case a == flag:
-			if i+1 == len(args) || args[i+1] == "" {
-				return nil, "", fmt.Errorf("%s needs a value", flag)
-			}
+		case a == flag && i+1 < len(args):
 			i++
-			value = args[i]
+			v = args[i]
+		case a == flag:
 		case strings.HasPrefix(a, flag+"="):
-			if value = strings.TrimPrefix(a, flag+"="); value == "" {
-				return nil, "", fmt.Errorf("%s needs a value", flag)
-			}
+			v = strings.TrimPrefix(a, flag+"=")
 		default:
 			rest = append(rest, a)
+			continue
 		}
+		switch {
+		case seen:
+			return nil, "", fmt.Errorf("%s given more than once", flag)
+		case v == "" || strings.HasPrefix(v, "--"):
+			return nil, "", fmt.Errorf("%s needs a value", flag)
+		}
+		seen, value = true, v
 	}
 	return rest, value, nil
 }

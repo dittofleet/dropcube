@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -69,7 +68,7 @@ func actOnLink(client *http.Client, cfg *config.Config, link, action string) err
 		return err
 	}
 
-	target := origin(dep.URL) + "/" + action + "/" + key
+	target := config.Origin(dep.URL) + "/" + action + "/" + key
 	req, err := http.NewRequest(http.MethodPost, target, nil)
 	if err != nil {
 		return err
@@ -89,25 +88,10 @@ func actOnLink(client *http.Client, cfg *config.Config, link, action string) err
 func deploymentFor(cfg *config.Config, link *url.URL) (*config.Deployment, error) {
 	var hosts []string
 	for _, d := range cfg.All() {
-		if origin(d.URL) == origin(link) {
+		if config.Origin(d.URL) == config.Origin(link) {
 			return d, nil
 		}
 		hosts = append(hosts, d.URL.Host)
 	}
 	return nil, fmt.Errorf("not a link from %s", strings.Join(hosts, " or "))
-}
-
-// origin reduces a URL to the form the worker builds its links from (the JS
-// URL.origin): lowercased host, and a port only when it is not the scheme's
-// default. Comparing raw hosts would reject links from an endpoint written
-// as https://Drop.example or https://drop.example:443.
-func origin(u *url.URL) string {
-	host, port := strings.ToLower(u.Hostname()), u.Port()
-	if (u.Scheme == "https" && port == "443") || (u.Scheme == "http" && port == "80") {
-		port = ""
-	}
-	if port != "" {
-		host = net.JoinHostPort(host, port)
-	}
-	return u.Scheme + "://" + host
 }

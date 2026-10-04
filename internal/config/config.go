@@ -1,11 +1,13 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -28,11 +30,6 @@ type Config struct {
 	// Deployments are further workers, chosen by name with
 	// `upload --to <name>`. Each token defaults to the top-level one.
 	Deployments map[string]*Deployment `json:"deployments,omitempty"`
-
-	// LegacyPrivate catches v0.4.0's "private" section, so a config still
-	// using it fails with a pointer to its replacement instead of the
-	// deployment silently vanishing.
-	LegacyPrivate json.RawMessage `json:"private,omitempty"`
 }
 
 // Deployment is one dropcube worker: where it is, the token it takes, and
@@ -113,7 +110,12 @@ func Load() (*Config, error) {
 	fileExists := err == nil
 	switch {
 	case fileExists:
-		if err := json.Unmarshal(data, cfg); err != nil {
+		// Unknown keys are errors rather than ignored, so a misspelt or
+		// outdated section (like v0.4.0's "private") fails loudly instead
+		// of its deployment silently going missing.
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(cfg); err != nil {
 			return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 		}
 		if cfg.SchemaVersion != SchemaVersion {
@@ -139,18 +141,22 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) validate(path string) error {
-	if len(c.LegacyPrivate) > 0 {
-		return fmt.Errorf("invalid %s:\n  - private: move this section to deployments.private (and upload with --to private)", path)
-	}
 	c.Name = DefaultName
 	if err := c.Deployment.validate(path, ""); err != nil {
 		return err
 	}
+	// keep and remove pick a deployment by the host a link came from, so
+	// two deployments on one origin would leave them guessing which token
+	// to send.
+	origins := map[string]string{Origin(c.URL): DefaultName}
 	for _, name := range slices.Sorted(maps.Keys(c.Deployments)) {
 		d := c.Deployments[name]
 		field := "deployments." + name
-		if name == "" || name == DefaultName || d == nil {
+		switch {
+		case name == "" || name == DefaultName:
 			return fmt.Errorf("invalid %s:\n  - %s: not a usable deployment name", path, field)
+		case d == nil:
+			return fmt.Errorf("invalid %s:\n  - %s: missing endpoint", path, field)
 		}
 		d.Name = name
 		if d.Token == "" {
@@ -159,8 +165,27 @@ func (c *Config) validate(path string) error {
 		if err := d.validate(path, field+"."); err != nil {
 			return err
 		}
+		if other, ok := origins[Origin(d.URL)]; ok {
+			return fmt.Errorf("invalid %s:\n  - %s: same endpoint as %s", path, field, other)
+		}
+		origins[Origin(d.URL)] = name
 	}
 	return nil
+}
+
+// Origin reduces a URL to the form the worker builds its links from (the JS
+// URL.origin): lowercased host, and a port only when it is not the scheme's
+// default. Comparing raw hosts would reject links from an endpoint written
+// as https://Drop.example or https://drop.example:443.
+func Origin(u *url.URL) string {
+	host, port := strings.ToLower(u.Hostname()), u.Port()
+	if (u.Scheme == "https" && port == "443") || (u.Scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	}
+	return u.Scheme + "://" + host
 }
 
 func (d *Deployment) validate(path, field string) error {
@@ -183,5 +208,7 @@ func (d *Deployment) validate(path, field string) error {
 		return fmt.Errorf("invalid %s:\n  - %stoken: missing", path, field)
 	}
 	d.URL = u
+	// `dropcube deployments` prints one deployment per line.
+	d.Description = strings.Join(strings.Fields(d.Description), " ")
 	return nil
 }

@@ -19,9 +19,15 @@ func TestExtractValueFlag(t *testing.T) {
 			t.Errorf("%q: rest %q, value %q, err %v", c.args, rest, got, err)
 		}
 	}
-	for _, args := range [][]string{{"a.txt", "--to"}, {"--to=", "a.txt"}, {"--to", "", "a.txt"}} {
+	for _, args := range [][]string{
+		{"a.txt", "--to"},
+		{"--to=", "a.txt"},
+		{"--to", "", "a.txt"},
+		{"--to", "--yes", "a.txt"},
+		{"--to", "a", "--to=b", "a.txt"},
+	} {
 		if _, _, err := extractValueFlag(args, "to"); err == nil {
-			t.Errorf("%q: a --to with no value should be an error", args)
+			t.Errorf("%q: should be an error", args)
 		}
 	}
 }

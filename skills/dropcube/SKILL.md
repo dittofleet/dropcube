@@ -43,6 +43,9 @@ Pick the one whose name or description matches what the user asked for. Otherwis
 
 ## When it fails
 
-`command not found`, `config not found`, `still has placeholder values` or `HTTP 401` mean dropcube isn't installed or set up on this machine. Tell the user and stop. Don't go looking for tokens or edit the config yourself.
+Tell the user and stop, without trying to fix it yourself, when you see:
 
-`no deployment named ...` means the user hasn't set that deployment up on this machine. Tell them, and don't fall back to another deployment on your own.
+- `command not found`, `config not found`, `still has placeholder values`, `failed to parse` or `invalid`: dropcube isn't installed or set up properly on this machine. Don't go looking for tokens or edit the config.
+- `HTTP 401`: the token in the config is wrong.
+- `no deployment named ...`: the user hasn't set that deployment up here. Don't fall back to another deployment on your own.
+- `unknown command` or `unknown flag`: the installed dropcube doesn't match these instructions. The user can run `dropcube update`.
