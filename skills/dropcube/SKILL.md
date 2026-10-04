@@ -1,27 +1,51 @@
 ---
 name: dropcube
-description: Send a file to the user by uploading it and replying with a view link. Use when the user asks you to send/share/upload a file for viewing.
+description: Send the user a file by uploading it with dropcube and replying with a link. Use when the user asks you to send, share or upload a file for them to look at, such as a screenshot, report, log or build output.
 ---
 
 # dropcube: send files to the user
 
-Upload any file and get back a private, expiring view link:
-
 ```sh
-dropcube upload <file>
+dropcube upload report.html
 ```
 
-Prints one URL per file to stdout (multiple files allowed, links in argument order). Give the link(s) to the user so they can view the file you uploaded.
+This prints a link. Reply with it so the user can open the file. You can pass several files at once and get one link per line, in the same order.
 
-## Notes
+## Before uploading
 
-- **NEVER upload secrets** (API keys, credentials, .env files) or sensitive files through dropcube.
-- Links work for 30 days after upload, then the file is deleted. You do not need to mention this to the user.
-- Links are unguessable, and anyone holding one can view that file until it expires.
-- `dropcube upload --private <file>` sends to the private deployment instead, where viewing also needs the user's login. Use it when the user asks for a private upload.
-- To delete an upload early (wrong file, stale version), run `dropcube remove <link>`.
-- If the user wants a file to outlive the 30 days, `dropcube keep <link>` stops it expiring and the link stays the same. This is the user's call, not something to do on your own.
-- You cannot list or read back previous uploads, and a lost link cannot be recovered. Keep the printed URL.
-- The filename becomes part of the link and the browser's download name, so give files meaningful names before uploading.
-- `command not found` / `config not found` / `still has placeholder values` / `HTTP 401`: notify the user.
-- Do not upload large files (>5MB) without confirming with the user.
+- Never upload secrets: API keys, tokens, credentials, `.env` files, or anything containing them.
+- Give the file a clear name first. The user sees it as the download name, and usually in the link too.
+- Ask before uploading anything over 5 MB.
+
+## Other deployments
+
+Uploads go to the user's default deployment. The user may have others, such as a private one where opening a link also takes their login. When the user asks for a private upload or a particular deployment, list them:
+
+```sh
+dropcube deployments
+```
+
+Each line is a name, the host its links come from, and a description of what it is for. To upload to one, pass its name with `--to`:
+
+```sh
+dropcube upload --to private report.html
+```
+
+Pick the one whose name or description matches what the user asked for. Otherwise stick to the default and don't run `dropcube deployments` at all.
+
+## After uploading
+
+- Links stop working after 30 days, when the file is deleted. No need to mention this.
+- Unless the deployment's description says otherwise, anyone with the link can open the file, so only post it where the user wants it.
+- You can't list or read back uploads, so keep the link you were given.
+- Uploaded the wrong file or an old version? Upload the right one, then delete the old one with `dropcube remove <link>`.
+- `dropcube keep <link>` stops a file from expiring, and the link stays the same. Only do this when the user asks.
+
+## When it fails
+
+Tell the user and stop, without trying to fix it yourself, when you see:
+
+- `command not found`, `config not found`, `still has placeholder values`, `failed to parse` or `invalid`: dropcube isn't installed or set up properly on this machine. Don't go looking for tokens or edit the config.
+- `HTTP 401`: the token in the config is wrong.
+- `no deployment named ...`: the user hasn't set that deployment up here. Don't fall back to another deployment on your own.
+- `unknown command` or `unknown flag`: the installed dropcube doesn't match these instructions. The user can run `dropcube update`.

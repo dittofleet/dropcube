@@ -1,13 +1,17 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dittofleet/dropcube/internal/xdg"
@@ -15,30 +19,56 @@ import (
 
 const SchemaVersion = 1
 
+// DefaultName names the top-level deployment, the one used unless another
+// is asked for.
+const DefaultName = "default"
+
 type Config struct {
 	SchemaVersion int `json:"schemaVersion"`
 	Deployment
 
-	// Private is an optional second deployment, the one `upload --private`
-	// sends to. Its token defaults to the main one.
-	Private *Deployment `json:"private,omitempty"`
+	// Deployments are further workers, chosen by name with
+	// `upload --to <name>`. Each token defaults to the top-level one.
+	Deployments map[string]*Deployment `json:"deployments,omitempty"`
 }
 
-// Deployment is one dropcube worker: where it is and the token it takes.
+// Deployment is one dropcube worker: where it is, the token it takes, and
+// what it is for.
 type Deployment struct {
 	Endpoint string `json:"endpoint"`
 	Token    string `json:"token,omitempty"`
+	// Description tells agents when to pick this deployment, e.g. "Needs
+	// the user's login to view. Use for private files."
+	Description string `json:"description,omitempty"`
 
-	// URL is Endpoint parsed and validated, set by Load.
-	URL *url.URL `json:"-"`
+	// Name and URL are set by Load: the deployment's key in the config
+	// (DefaultName for the top-level one) and Endpoint parsed.
+	Name string   `json:"-"`
+	URL  *url.URL `json:"-"`
 }
 
-// Deployments lists every configured deployment, the main one first.
-func (c *Config) Deployments() []*Deployment {
-	if c.Private == nil {
-		return []*Deployment{&c.Deployment}
+// All lists every deployment, the default first and the rest by name.
+func (c *Config) All() []*Deployment {
+	all := []*Deployment{&c.Deployment}
+	for _, name := range slices.Sorted(maps.Keys(c.Deployments)) {
+		all = append(all, c.Deployments[name])
 	}
-	return []*Deployment{&c.Deployment, c.Private}
+	return all
+}
+
+// Find returns the deployment with the given name.
+func (c *Config) Find(name string) (*Deployment, error) {
+	if name == DefaultName {
+		return &c.Deployment, nil
+	}
+	if d, ok := c.Deployments[name]; ok {
+		return d, nil
+	}
+	var names []string
+	for _, d := range c.All() {
+		names = append(names, d.Name)
+	}
+	return nil, fmt.Errorf("no deployment named %q (have: %s)", name, strings.Join(names, ", "))
 }
 
 func Path() string {
@@ -49,7 +79,7 @@ func Path() string {
 // main prints this when Load returns a NotConfiguredError.
 const StarterConfig = `{
   "schemaVersion": 1,
-  "endpoint": "https://dropcube.<your-subdomain>.workers.dev",
+  "endpoint": "https://<your dropcube domain>",
   "token": "<API token>"
 }`
 
@@ -70,8 +100,7 @@ func (e *NotConfiguredError) Error() string {
 }
 
 // Load reads the config file and overlays the DROPCUBE_ENDPOINT /
-// DROPCUBE_TOKEN env vars on top, and DROPCUBE_PRIVATE_ENDPOINT /
-// DROPCUBE_PRIVATE_TOKEN for the private deployment. The file is optional when the
+// DROPCUBE_TOKEN env vars on top. The file is optional when the
 // environment supplies the values.
 func Load() (*Config, error) {
 	path := Path()
@@ -81,7 +110,12 @@ func Load() (*Config, error) {
 	fileExists := err == nil
 	switch {
 	case fileExists:
-		if err := json.Unmarshal(data, cfg); err != nil {
+		// Unknown keys are errors rather than ignored, so a misspelt or
+		// outdated section (like v0.4.0's "private") fails loudly instead
+		// of its deployment silently going missing.
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(cfg); err != nil {
 			return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 		}
 		if cfg.SchemaVersion != SchemaVersion {
@@ -97,16 +131,6 @@ func Load() (*Config, error) {
 	if v := os.Getenv("DROPCUBE_TOKEN"); v != "" {
 		cfg.Token = v
 	}
-	privateEndpoint, privateToken := os.Getenv("DROPCUBE_PRIVATE_ENDPOINT"), os.Getenv("DROPCUBE_PRIVATE_TOKEN")
-	if cfg.Private == nil && (privateEndpoint != "" || privateToken != "") {
-		cfg.Private = &Deployment{}
-	}
-	if privateEndpoint != "" {
-		cfg.Private.Endpoint = privateEndpoint
-	}
-	if privateToken != "" {
-		cfg.Private.Token = privateToken
-	}
 	if !fileExists && cfg.Endpoint == "" && cfg.Token == "" {
 		return nil, &NotConfiguredError{Path: path}
 	}
@@ -117,18 +141,51 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) validate(path string) error {
+	c.Name = DefaultName
 	if err := c.Deployment.validate(path, ""); err != nil {
 		return err
 	}
-	if c.Private != nil {
-		if c.Private.Token == "" {
-			c.Private.Token = c.Token
+	// keep and remove pick a deployment by the host a link came from, so
+	// two deployments on one origin would leave them guessing which token
+	// to send.
+	origins := map[string]string{Origin(c.URL): DefaultName}
+	for _, name := range slices.Sorted(maps.Keys(c.Deployments)) {
+		d := c.Deployments[name]
+		field := "deployments." + name
+		switch {
+		case name == "" || name == DefaultName:
+			return fmt.Errorf("invalid %s:\n  - %s: not a usable deployment name", path, field)
+		case d == nil:
+			return fmt.Errorf("invalid %s:\n  - %s: missing endpoint", path, field)
 		}
-		if err := c.Private.validate(path, "private."); err != nil {
+		d.Name = name
+		if d.Token == "" {
+			d.Token = c.Token
+		}
+		if err := d.validate(path, field+"."); err != nil {
 			return err
 		}
+		if other, ok := origins[Origin(d.URL)]; ok {
+			return fmt.Errorf("invalid %s:\n  - %s: same endpoint as %s", path, field, other)
+		}
+		origins[Origin(d.URL)] = name
 	}
 	return nil
+}
+
+// Origin reduces a URL to the form the worker builds its links from (the JS
+// URL.origin): lowercased host, and a port only when it is not the scheme's
+// default. Comparing raw hosts would reject links from an endpoint written
+// as https://Drop.example or https://drop.example:443.
+func Origin(u *url.URL) string {
+	host, port := strings.ToLower(u.Hostname()), u.Port()
+	if (u.Scheme == "https" && port == "443") || (u.Scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	}
+	return u.Scheme + "://" + host
 }
 
 func (d *Deployment) validate(path, field string) error {
@@ -136,8 +193,8 @@ func (d *Deployment) validate(path, field string) error {
 	// <...> span means an unfilled placeholder, whichever starter text
 	// (install.sh, README, StarterConfig) it was copied from.
 	if strings.ContainsAny(d.Endpoint, "<>") || strings.ContainsAny(d.Token, "<>") {
-		// The starter config has no private section, so pointing at it
-		// would not help. Name the section instead.
+		// The starter config has no deployments section, so pointing at
+		// it would not help. Name the section instead.
 		if field != "" {
 			return fmt.Errorf("invalid %s:\n  - %s: still has placeholder values", path, strings.TrimSuffix(field, "."))
 		}
@@ -151,5 +208,7 @@ func (d *Deployment) validate(path, field string) error {
 		return fmt.Errorf("invalid %s:\n  - %stoken: missing", path, field)
 	}
 	d.URL = u
+	// `dropcube deployments` prints one deployment per line.
+	d.Description = strings.Join(strings.Fields(d.Description), " ")
 	return nil
 }

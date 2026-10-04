@@ -65,7 +65,7 @@ if [ -n "$MSG" ]; then
   cat > "$CONFIG_FILE" <<EOF
 {
   "schemaVersion": 1,
-  "endpoint": "${ENDPOINT:-https://dropcube.<your-subdomain>.workers.dev}",
+  "endpoint": "${ENDPOINT:-https://<your dropcube domain>}",
   "token": "${TOKEN:-<API token>}"
 }
 EOF

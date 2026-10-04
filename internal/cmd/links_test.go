@@ -36,7 +36,10 @@ func deployment(t *testing.T, endpoint, token string) config.Deployment {
 func TestActOnLinkRoutesToTheLinksDeployment(t *testing.T) {
 	main, private := newRecorder(t), newRecorder(t)
 	priv := deployment(t, private.URL, "tok-private")
-	cfg := &config.Config{Deployment: deployment(t, main.URL, "tok-main"), Private: &priv}
+	cfg := &config.Config{
+		Deployment:  deployment(t, main.URL, "tok-main"),
+		Deployments: map[string]*config.Deployment{"private": &priv},
+	}
 
 	for _, c := range []struct{ link, action string }{
 		{main.URL + "/f/0123456789abcdef/a%20b.txt", "keep"},
