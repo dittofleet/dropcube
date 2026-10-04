@@ -38,7 +38,7 @@ bunx wrangler r2 bucket lifecycle add dropcube expire-after-30d --expire-days 30
 
 `wrangler.toml` sets `PUBLIC_LINKS`, so this deployment shows a file to anyone with its link. Without that setting the worker requires an Access login to view (see below) and refuses every request until Access is configured.
 
-Optional: to serve from your own (sub)domain instead of workers.dev, add it in the Cloudflare dashboard under the worker's settings ("Domains and Routes"), then use it as the `endpoint`. Links inherit whatever domain the upload came through, so no other config changes.
+`wrangler.toml` turns off the worker's workers.dev and preview URLs, so it is only reachable through a custom domain. Add one in the Cloudflare dashboard under the worker's settings ("Domains and Routes"), and use it as the `endpoint`.
 
 ## Private deployment (optional)
 
@@ -84,7 +84,7 @@ Installs the latest release to `~/.local/bin/dropcube` (override with `DROPCUBE_
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/dittofleet/dropcube/main/install.sh \
-  | DROPCUBE_ENDPOINT=https://dropcube.<you>.workers.dev \
+  | DROPCUBE_ENDPOINT=https://<your dropcube domain> \
     DROPCUBE_TOKEN=<API token> sh
 ```
 
@@ -146,7 +146,7 @@ Removes the binary, `~/.config/dropcube/`, and `~/.local/share/dropcube/` (updat
 ```json
 {
   "schemaVersion": 1,
-  "endpoint": "https://dropcube.<you>.workers.dev",
+  "endpoint": "https://<your dropcube domain>",
   "token": "<API token>"
 }
 ```
@@ -156,7 +156,7 @@ The top-level `endpoint` is the default deployment. Further deployments go under
 ```json
 {
   "schemaVersion": 1,
-  "endpoint": "https://dropcube.<you>.workers.dev",
+  "endpoint": "https://<your dropcube domain>",
   "token": "<API token>",
   "deployments": {
     "private": {

@@ -76,7 +76,7 @@ func Path() string {
 // main prints this when Load returns a NotConfiguredError.
 const StarterConfig = `{
   "schemaVersion": 1,
-  "endpoint": "https://dropcube.<your-subdomain>.workers.dev",
+  "endpoint": "https://<your dropcube domain>",
   "token": "<API token>"
 }`
 
