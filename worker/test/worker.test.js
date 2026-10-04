@@ -64,6 +64,8 @@ function describeObject(o) {
 // Each test gets its own team domain, which resets the worker's key cache,
 // so no key carries over from one test into the next.
 let teamCount = 0;
+// Work the worker handed to ctx.waitUntil, so tests can wait for it.
+const background = [];
 
 function setup(vars = {}) {
   const env = {
@@ -72,8 +74,9 @@ function setup(vars = {}) {
     KEEP: memoryBucket(),
     ...vars,
   };
+  const ctx = { waitUntil: (p) => background.push(p) };
   const call = (method, path, headers = {}, body) =>
-    worker.fetch(new Request(`${ORIGIN}${path}`, { method, headers, body }), env);
+    worker.fetch(new Request(`${ORIGIN}${path}`, { method, headers, body }), env, ctx);
   return { env, call };
 }
 
@@ -236,7 +239,7 @@ describe("Access mode", () => {
       "signed by another key": await jwt({}, { key: otherKeyPair.privateKey }),
       "unknown key id": await jwt({}, { kid: "k2" }),
       "alg none": (await jwt({}, { alg: "none" })).replace(/\.[^.]*$/, "."),
-      expired: await jwt({ exp: now - 1 }),
+      expired: await jwt({ exp: now - 600 }),
       "not yet valid": await jwt({ nbf: now + 600 }),
       "another application": await jwt({ aud: ["other-aud"] }),
       "another team": await jwt({ iss: "https://evil.cloudflareaccess.com" }),
@@ -287,18 +290,46 @@ describe("Access mode", () => {
     const link = await upload(call);
     certsDown = true;
     const token = await jwt();
-    const views = await Promise.all([1, 2, 3].map(() => call("GET", link, login(token))));
-    expect(views.map((v) => v.status)).toEqual([503, 503, 503]);
-    expect((await call("GET", link, login(token))).status).toBe(503);
+    for (let i = 0; i < 3; i++) expect((await call("GET", link, login(token))).status).toBe(503);
     expect(certFetches).toBe(1);
   });
 
-  test("concurrent first views share one key fetch", async () => {
+  test("concurrent first views all get in", async () => {
     const { call } = privateSetup();
     const link = await upload(call);
     const token = await jwt();
     const views = await Promise.all([1, 2, 3].map(() => call("GET", link, login(token))));
     expect(views.map((v) => v.status)).toEqual([200, 200, 200]);
-    expect(certFetches).toBe(1);
+  });
+
+  test("expired keys keep serving while they refresh in the background", async () => {
+    const { call } = privateSetup();
+    const link = await upload(call);
+    const token = await jwt();
+    expect((await call("GET", link, login(token))).status).toBe(200);
+    const realNow = Date.now;
+    Date.now = () => realNow() + 2 * 3600 * 1000;
+    try {
+      certsDown = true;
+      expect((await call("GET", link, login(await jwt()))).status).toBe(200);
+      await Promise.all(background.splice(0));
+      expect(certFetches).toBe(2);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  test("tokens a few seconds off the worker's clock still work", async () => {
+    const { call } = privateSetup();
+    const link = await upload(call);
+    const now = Math.floor(Date.now() / 1000);
+    expect((await call("GET", link, login(await jwt({ nbf: now + 5 })))).status).toBe(200);
+    expect((await call("GET", link, login(await jwt({ exp: now - 5 })))).status).toBe(200);
+  });
+
+  test("the team domain tolerates case, whitespace and a trailing path", async () => {
+    const { call } = setup({ ACCESS_TEAM_DOMAIN: ` ${team.toUpperCase()}/x\n`, ACCESS_AUD: AUD });
+    const link = await upload(call);
+    expect((await call("GET", link, login(await jwt()))).status).toBe(200);
   });
 });

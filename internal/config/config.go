@@ -97,14 +97,15 @@ func Load() (*Config, error) {
 	if v := os.Getenv("DROPCUBE_TOKEN"); v != "" {
 		cfg.Token = v
 	}
-	if v := os.Getenv("DROPCUBE_PRIVATE_ENDPOINT"); v != "" {
-		if cfg.Private == nil {
-			cfg.Private = &Deployment{}
-		}
-		cfg.Private.Endpoint = v
+	privateEndpoint, privateToken := os.Getenv("DROPCUBE_PRIVATE_ENDPOINT"), os.Getenv("DROPCUBE_PRIVATE_TOKEN")
+	if cfg.Private == nil && (privateEndpoint != "" || privateToken != "") {
+		cfg.Private = &Deployment{}
 	}
-	if v := os.Getenv("DROPCUBE_PRIVATE_TOKEN"); v != "" && cfg.Private != nil {
-		cfg.Private.Token = v
+	if privateEndpoint != "" {
+		cfg.Private.Endpoint = privateEndpoint
+	}
+	if privateToken != "" {
+		cfg.Private.Token = privateToken
 	}
 	if !fileExists && cfg.Endpoint == "" && cfg.Token == "" {
 		return nil, &NotConfiguredError{Path: path}
@@ -135,6 +136,11 @@ func (d *Deployment) validate(path, field string) error {
 	// <...> span means an unfilled placeholder, whichever starter text
 	// (install.sh, README, StarterConfig) it was copied from.
 	if strings.ContainsAny(d.Endpoint, "<>") || strings.ContainsAny(d.Token, "<>") {
+		// The starter config has no private section, so pointing at it
+		// would not help. Name the section instead.
+		if field != "" {
+			return fmt.Errorf("invalid %s:\n  - %s: still has placeholder values", path, strings.TrimSuffix(field, "."))
+		}
 		return &NotConfiguredError{Path: path, Placeholder: true}
 	}
 	u, err := url.Parse(d.Endpoint)

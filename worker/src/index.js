@@ -35,12 +35,14 @@ const ACTIONS = { keep: handleKeep, remove: handleRemove };
 // between fetch attempts (see accessKey).
 const ACCESS_KEYS_TTL = 3600 * 1000;
 const ACCESS_KEYS_REFETCH = 60 * 1000;
+// Seconds of leeway on token expiry and start times.
+const CLOCK_SKEW = 60;
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     // Fail closed when the worker is deployed without its secret. Without
     // this, an unset API_TOKEN makes the expected header the literal
     // string "Bearer undefined", which anyone can send.
@@ -49,7 +51,7 @@ export default {
     // Same for the Access settings: viewing is private unless PUBLIC_LINKS
     // says otherwise, so a forgotten setting locks files away instead of
     // opening them to anyone with a link.
-    if (!isPublic(env) && !(isNonEmptyString(env.ACCESS_TEAM_DOMAIN) && isNonEmptyString(env.ACCESS_AUD)))
+    if (!flag(env, "PUBLIC_LINKS") && !(isNonEmptyString(env.ACCESS_TEAM_DOMAIN) && isNonEmptyString(env.ACCESS_AUD)))
       return new Response(
         "worker not configured: set ACCESS_TEAM_DOMAIN and ACCESS_AUD, or PUBLIC_LINKS\n",
         { status: 503 },
@@ -60,7 +62,7 @@ export default {
     if (request.method === "PUT") return handleUpload(request, url, env);
     if (url.pathname.startsWith(VIEW_PREFIX)) {
       if (request.method === "GET" || request.method === "HEAD")
-        return handleView(request, url, env);
+        return handleView(request, url, env, ctx);
       return new Response("method not allowed\n", {
         status: 405,
         headers: { Allow: "GET, HEAD" },
@@ -77,12 +79,8 @@ export default {
   },
 };
 
-function isPublic(env) {
-  return String(env.PUBLIC_LINKS) === "true";
-}
-
-function idOnly(env) {
-  return String(env.ID_ONLY_LINKS) === "true";
+function flag(env, name) {
+  return String(env[name]) === "true";
 }
 
 function authorized(request, env) {
@@ -101,7 +99,7 @@ async function handleUpload(request, url, env) {
   // An id-only key has nowhere to carry the filename, so it rides along as
   // metadata and comes back out as the download name.
   const id = randomId();
-  const [key, path] = idOnly(env)
+  const [key, path] = flag(env, "ID_ONLY_LINKS")
     ? [id, id]
     : [`${id}/${filename}`, `${id}/${encodeURIComponent(filename)}`];
   await env.BUCKET.put(key, request.body, {
@@ -117,15 +115,16 @@ async function handleUpload(request, url, env) {
   });
 }
 
-async function handleView(request, url, env) {
+async function handleView(request, url, env, ctx) {
   // A service worker registered from one upload would see every file
   // opened after it, and with id-only links its scope would be all of /f/.
   // No real file needs to be one, so refuse to serve any as one.
   if (request.headers.has("Service-Worker"))
     return new Response("forbidden\n", { status: 403 });
 
-  if (!isPublic(env)) {
-    const login = await accessLogin(request, env);
+  const isPublic = flag(env, "PUBLIC_LINKS");
+  if (!isPublic) {
+    const login = await accessLogin(request, env, ctx);
     if (login === null)
       return new Response("access keys unavailable\n", { status: 503 });
     if (!login) return new Response("forbidden\n", { status: 403 });
@@ -149,7 +148,7 @@ async function handleView(request, url, env) {
   // etag still makes an unchanged file a cheap 304.
   headers.set(
     "Cache-Control",
-    isPublic(env) ? `private, max-age=${maxAge}` : "private, no-cache",
+    isPublic ? `private, max-age=${maxAge}` : "private, no-cache",
   );
   // filename is already sanitized at upload time, but encode at the header
   // layer anyway so Content-Disposition stays valid whatever the sanitizer
@@ -290,7 +289,7 @@ function timingSafeEqual(a, b) {
 // any of those cases a request arriving without a valid token is refused
 // here instead of being served. Returns true or false, or null when the
 // signing keys cannot be fetched.
-async function accessLogin(request, env) {
+async function accessLogin(request, env, ctx) {
   const token = request.headers.get("Cf-Access-Jwt-Assertion");
   const parts = token?.split(".") ?? [];
   if (parts.length !== 3) return false;
@@ -301,7 +300,7 @@ async function accessLogin(request, env) {
     return false;
 
   const team = teamOrigin(env);
-  const key = await accessKey(team, header.kid);
+  const key = await accessKey(team, header.kid, ctx);
   if (key === null) return null;
   if (!key) return false;
   const signed = await crypto.subtle.verify(
@@ -314,54 +313,73 @@ async function accessLogin(request, env) {
 
   // The signature only proves Access issued the token. It still has to be
   // for this application (any other app on the same team signs with the
-  // same keys) and still be current.
+  // same keys) and still be current, give or take a little clock skew
+  // between Access and this worker.
   const now = Date.now() / 1000;
   const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
   return (
     claims.iss === team &&
     audiences.includes(env.ACCESS_AUD) &&
     typeof claims.exp === "number" &&
-    claims.exp > now &&
-    (claims.nbf === undefined || claims.nbf <= now)
+    claims.exp > now - CLOCK_SKEW &&
+    (claims.nbf === undefined || claims.nbf <= now + CLOCK_SKEW)
   );
 }
 
 // ACCESS_TEAM_DOMAIN may be given bare ("team.cloudflareaccess.com") or as
-// a URL. Either way the keys are fetched over https, and tokens name the
-// team as that https origin.
+// a URL, in any case and with stray whitespace from pasting. Either way the
+// keys are fetched over https, and tokens name the team as that https origin.
 function teamOrigin(env) {
-  const domain = env.ACCESS_TEAM_DOMAIN.replace(/^[a-z]+:\/\//i, "").replace(/\/+$/, "");
+  const domain = env.ACCESS_TEAM_DOMAIN.trim()
+    .toLowerCase()
+    .replace(/^[a-z]+:\/\//, "")
+    .replace(/\/.*$/, "");
   return `https://${domain}`;
 }
 
-// Signing keys, cached for the isolate's lifetime. Access rotates keys from
-// time to time, so a token naming a key we lack triggers a refetch.
-// Attempts, failed ones included, are spaced ACCESS_KEYS_REFETCH apart, so a
-// stream of made-up key ids cannot become a stream of fetches. Requests
-// arriving mid-fetch wait on the same one. This is what a JWT library's
-// remote key set would do, kept in-house so the worker stays dependency-free.
+// Signing keys, cached for the isolate's lifetime. This is what a JWT
+// library's remote key set would do, kept in-house so the worker stays
+// dependency-free.
+//
+// Only the keys are shared between requests, never a fetch in flight: the
+// Workers runtime ties a fetch to the request that started it, so another
+// request awaiting it could hang if that request goes away. Each request
+// therefore fetches for itself, and the timestamps keep that rare:
+// - A known key past ACCESS_KEYS_TTL still serves, and the refresh runs in
+//   the background (one per ACCESS_KEYS_REFETCH).
+// - A key we lack (Access rotated, or a made-up id) is fetched before
+//   answering, unless the last fetch succeeded or failed within
+//   ACCESS_KEYS_REFETCH. That stops a stream of made-up key ids, or an
+//   outage, from becoming a stream of fetches.
 let cached = null;
 
 // Returns the key for kid, false when the team does not have it, or null
 // when the keys cannot be fetched.
-async function accessKey(team, kid) {
+async function accessKey(team, kid, ctx) {
   if (cached?.team !== team)
-    cached = { team, keys: null, fetchedAt: 0, attemptedAt: -Infinity, pending: null };
+    cached = { team, keys: null, fetchedAt: -Infinity, failedAt: -Infinity, refreshedAt: -Infinity };
   const entry = cached;
   const now = Date.now();
-  const wanted = now - entry.fetchedAt > ACCESS_KEYS_TTL || !entry.keys?.has(kid);
-  if (wanted && !entry.pending && now - entry.attemptedAt > ACCESS_KEYS_REFETCH) {
-    entry.attemptedAt = now;
-    entry.pending = fetchAccessKeys(team).then((keys) => {
-      if (keys) Object.assign(entry, { keys, fetchedAt: Date.now() });
-      entry.pending = null;
-    });
+  const recently = (t) => now - t < ACCESS_KEYS_REFETCH;
+
+  if (entry.keys?.has(kid)) {
+    if (now - entry.fetchedAt > ACCESS_KEYS_TTL && !recently(entry.refreshedAt)) {
+      entry.refreshedAt = now;
+      ctx.waitUntil(refreshAccessKeys(entry));
+    }
+    return entry.keys.get(kid);
   }
-  if (entry.pending) await entry.pending;
+  if (!recently(entry.fetchedAt) && !recently(entry.failedAt)) await refreshAccessKeys(entry);
   // When a refresh fails, the keys from the last good fetch keep serving
   // rather than locking every view out until Access answers again.
   if (!entry.keys) return null;
   return entry.keys.get(kid) ?? false;
+}
+
+async function refreshAccessKeys(entry) {
+  const keys = await fetchAccessKeys(entry.team);
+  if (keys) Object.assign(entry, { keys, fetchedAt: Date.now() });
+  else entry.failedAt = Date.now();
 }
 
 async function fetchAccessKeys(team) {

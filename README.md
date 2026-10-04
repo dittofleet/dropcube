@@ -166,4 +166,4 @@ For a private deployment, add a `private` section. Its `token` can be left out w
 
 ## Development
 
-Worker tests: `cd worker && bun test`.
+Tests: `go test ./...` for the CLI, `cd worker && bun test` for the worker.
