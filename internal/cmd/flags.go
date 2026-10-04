@@ -35,18 +35,17 @@ func extractValueFlag(args []string, name string) (rest []string, value string, 
 		a := args[i]
 		switch {
 		case a == flag:
-			if i+1 < len(args) {
-				i++
-				value = args[i]
+			if i+1 == len(args) || args[i+1] == "" {
+				return nil, "", fmt.Errorf("%s needs a value", flag)
 			}
+			i++
+			value = args[i]
 		case strings.HasPrefix(a, flag+"="):
-			value = strings.TrimPrefix(a, flag+"=")
+			if value = strings.TrimPrefix(a, flag+"="); value == "" {
+				return nil, "", fmt.Errorf("%s needs a value", flag)
+			}
 		default:
 			rest = append(rest, a)
-			continue
-		}
-		if value == "" {
-			return nil, "", fmt.Errorf("%s needs a value", flag)
 		}
 	}
 	return rest, value, nil

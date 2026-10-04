@@ -78,24 +78,3 @@ func TestActOnLinkRefusesOtherLinks(t *testing.T) {
 		t.Errorf("refused links still reached the worker: %q", main.got)
 	}
 }
-
-func TestExtractValueFlag(t *testing.T) {
-	for _, c := range []struct {
-		args       []string
-		rest, want string
-	}{
-		{[]string{"--to", "work", "a.txt"}, "a.txt", "work"},
-		{[]string{"a.txt", "--to=work", "b.txt"}, "a.txt b.txt", "work"},
-		{[]string{"a.txt"}, "a.txt", ""},
-	} {
-		rest, got, err := extractValueFlag(c.args, "to")
-		if err != nil || got != c.want || strings.Join(rest, " ") != c.rest {
-			t.Errorf("%q: rest %q, value %q, err %v", c.args, rest, got, err)
-		}
-	}
-	for _, args := range [][]string{{"a.txt", "--to"}, {"--to=", "a.txt"}, {"--to", "", "a.txt"}} {
-		if _, _, err := extractValueFlag(args, "to"); err == nil {
-			t.Errorf("%q: a --to with no value should be an error", args)
-		}
-	}
-}

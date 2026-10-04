@@ -19,7 +19,7 @@ This prints a link. Reply with it so the user can open the file. You can pass se
 
 ## Other deployments
 
-Uploads go to the user's default deployment. The user may have others, such as a private one where opening a link also takes their login. To see them:
+Uploads go to the user's default deployment. The user may have others, such as a private one where opening a link also takes their login. When the user asks for a private upload or a particular deployment, list them:
 
 ```sh
 dropcube deployments
@@ -31,12 +31,12 @@ Each line is a name, the host its links come from, and a description of what it 
 dropcube upload --to private report.html
 ```
 
-Use a deployment other than the default only when the user asks for one, or when its description says it fits the request.
+Pick the one whose name or description matches what the user asked for. Otherwise stick to the default and don't run `dropcube deployments` at all.
 
 ## After uploading
 
 - Links stop working after 30 days, when the file is deleted. No need to mention this.
-- On most deployments anyone with the link can open the file, so only post it where the user wants it.
+- Unless the deployment's description says otherwise, anyone with the link can open the file, so only post it where the user wants it.
 - You can't list or read back uploads, so keep the link you were given.
 - Uploaded the wrong file or an old version? Upload the right one, then delete the old one with `dropcube remove <link>`.
 - `dropcube keep <link>` stops a file from expiring, and the link stays the same. Only do this when the user asks.

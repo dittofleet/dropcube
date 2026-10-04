@@ -59,6 +59,13 @@ func TestDeploymentPlaceholderNamesTheSection(t *testing.T) {
 	}
 }
 
+func TestLegacyPrivateSectionPointsAtItsReplacement(t *testing.T) {
+	writeConfig(t, `{"schemaVersion":1,"endpoint":"https://a.example","token":"main","private":{"endpoint":"https://b.example"}}`)
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "deployments.private") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestDefaultIsNotADeploymentName(t *testing.T) {
 	writeConfig(t, `{"schemaVersion":1,"endpoint":"https://a.example","token":"main","deployments":{"default":{"endpoint":"https://b.example"}}}`)
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "deployments.default") {

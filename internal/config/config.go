@@ -28,6 +28,11 @@ type Config struct {
 	// Deployments are further workers, chosen by name with
 	// `upload --to <name>`. Each token defaults to the top-level one.
 	Deployments map[string]*Deployment `json:"deployments,omitempty"`
+
+	// LegacyPrivate catches v0.4.0's "private" section, so a config still
+	// using it fails with a pointer to its replacement instead of the
+	// deployment silently vanishing.
+	LegacyPrivate json.RawMessage `json:"private,omitempty"`
 }
 
 // Deployment is one dropcube worker: where it is, the token it takes, and
@@ -56,10 +61,11 @@ func (c *Config) All() []*Deployment {
 
 // Find returns the deployment with the given name.
 func (c *Config) Find(name string) (*Deployment, error) {
-	for _, d := range c.All() {
-		if d.Name == name {
-			return d, nil
-		}
+	if name == DefaultName {
+		return &c.Deployment, nil
+	}
+	if d, ok := c.Deployments[name]; ok {
+		return d, nil
 	}
 	var names []string
 	for _, d := range c.All() {
@@ -133,6 +139,9 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) validate(path string) error {
+	if len(c.LegacyPrivate) > 0 {
+		return fmt.Errorf("invalid %s:\n  - private: move this section to deployments.private (and upload with --to private)", path)
+	}
 	c.Name = DefaultName
 	if err := c.Deployment.validate(path, ""); err != nil {
 		return err

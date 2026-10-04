@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -41,11 +42,9 @@ func Upload(args []string) error {
 	if err != nil {
 		return err
 	}
-	target := &cfg.Deployment
-	if to != "" {
-		if target, err = cfg.Find(to); err != nil {
-			return err
-		}
+	target, err := cfg.Find(cmp.Or(to, config.DefaultName))
+	if err != nil {
+		return err
 	}
 
 	client := &http.Client{Timeout: uploadTimeout}
