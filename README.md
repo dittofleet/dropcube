@@ -4,11 +4,11 @@
 
 Dropbox, minus almost everything: a write-only file drop for agents on remote machines, with capability-URL viewing for you.
 
-Agents run `dropcube upload <file>` and get back a private link to send you. The upload token can only write. It can never read, list, or delete files, so a leaked token on a remote machine exposes nothing. View links are unguessable and expire server-side.
+Agents run `dropcube upload <file>` and get back a private link to send you. The API token can upload, and keep or remove a file you also hold the link to. It can never read or list files, so a leaked token on a remote machine exposes nothing. View links are unguessable and expire server-side.
 
 Three parts:
 
-- **`worker/`**: a Cloudflare Worker in front of an R2 bucket. Handles authenticated `PUT`s and serves signed `GET`s.
+- **`worker/`**: a Cloudflare Worker in front of an R2 bucket. Handles authenticated `PUT`s and `POST`s, and serves capability-URL `GET`s.
 - **the `dropcube` CLI** (this repo's Go module): what agents invoke to upload.
 - **an agent skill** (`skills/dropcube/SKILL.md`): tells Claude Code how and when to use the CLI.
 
@@ -24,9 +24,9 @@ bunx wrangler r2 bucket create dropcube-keep   # holds files you choose to keep
 bunx wrangler deploy                      # prints https://dropcube.<you>.workers.dev
 # Until the secret below is set, the worker refuses every request with 503.
 
-# Upload token: generate, save for the machines, set as worker secret
+# API token: generate, save for the machines, set as worker secret
 openssl rand -hex 32                      # keep this value, it is DROPCUBE_TOKEN
-bunx wrangler secret put UPLOAD_TOKEN     # paste it when prompted
+bunx wrangler secret put API_TOKEN        # paste it when prompted
 
 # Auto-delete uploads after 30 days. Keep this equal to RETENTION_DAYS in
 # worker/src/index.js, which is what the worker tells browsers and what it
@@ -51,7 +51,7 @@ Installs the latest release to `~/.local/bin/dropcube` (override with `DROPCUBE_
 ```sh
 curl -fsSL https://raw.githubusercontent.com/dittofleet/dropcube/main/install.sh \
   | DROPCUBE_ENDPOINT=https://dropcube.<you>.workers.dev \
-    DROPCUBE_TOKEN=<upload token> sh
+    DROPCUBE_TOKEN=<API token> sh
 ```
 
 Supported platforms: macOS (arm64, x64), Linux (arm64, x64).
@@ -66,7 +66,7 @@ dropcube remove <link>         # delete an upload early
 
 Links print to stdout, one per file in argument order, pipe-friendly for agents. Anyone with a link can view for 30 days, then the file is deleted and the link dies with it. Nobody can enumerate or guess links.
 
-Opening `<link>/keep` or `<link>/remove` in a browser does the same as those commands. The link is the whole capability: holding it grants viewing, keeping, and removal of that one file, nothing more.
+A link on its own only grants viewing that one file. Keeping and removing also take the token, so they go through the CLI, and only for links from the configured endpoint.
 
 A kept file has no deadline and no way to look it up other than the link you already have, so keep the link somewhere you will find it again. Nothing else can list your uploads.
 
@@ -111,7 +111,7 @@ Removes the binary, `~/.config/dropcube/`, and `~/.local/share/dropcube/` (updat
 {
   "schemaVersion": 1,
   "endpoint": "https://dropcube.<you>.workers.dev",
-  "token": "<upload token>"
+  "token": "<API token>"
 }
 ```
 

@@ -40,7 +40,7 @@ func Uninstall(args []string, version string) error {
 
 	fmt.Println("This will remove:")
 	fmt.Printf("  - Binary:  %s\n", binaryPath)
-	fmt.Printf("  - Config:  %s  (endpoint and upload token)\n", configDir)
+	fmt.Printf("  - Config:  %s  (endpoint and API token)\n", configDir)
 	fmt.Printf("  - Cache:   %s\n", dataDir)
 	fmt.Println()
 	fmt.Println("Note: the Cloudflare worker, bucket, and uploaded files are NOT touched.")

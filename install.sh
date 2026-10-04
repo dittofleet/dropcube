@@ -48,7 +48,7 @@ if [ -z "$ENDPOINT" ] && [ -z "$TOKEN" ] && [ ! -f "$CONFIG_FILE" ] \
   printf "Endpoint URL (empty to fill in later): " > /dev/tty
   read -r ENDPOINT < /dev/tty || ENDPOINT=""
   if [ -n "$ENDPOINT" ]; then
-    printf "Upload token: " > /dev/tty
+    printf "API token: " > /dev/tty
     read -r TOKEN < /dev/tty || TOKEN=""
   fi
 fi
@@ -66,7 +66,7 @@ if [ -n "$MSG" ]; then
 {
   "schemaVersion": 1,
   "endpoint": "${ENDPOINT:-https://dropcube.<your-subdomain>.workers.dev}",
-  "token": "${TOKEN:-<upload token>}"
+  "token": "${TOKEN:-<API token>}"
 }
 EOF
   chmod 600 "$CONFIG_FILE"
