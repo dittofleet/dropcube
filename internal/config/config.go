@@ -16,12 +16,29 @@ import (
 const SchemaVersion = 1
 
 type Config struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	Endpoint      string `json:"endpoint"`
-	Token         string `json:"token"`
+	SchemaVersion int `json:"schemaVersion"`
+	Deployment
+
+	// Private is an optional second deployment, the one `upload --private`
+	// sends to. Its token defaults to the main one.
+	Private *Deployment `json:"private,omitempty"`
+}
+
+// Deployment is one dropcube worker: where it is and the token it takes.
+type Deployment struct {
+	Endpoint string `json:"endpoint"`
+	Token    string `json:"token,omitempty"`
 
 	// URL is Endpoint parsed and validated, set by Load.
 	URL *url.URL `json:"-"`
+}
+
+// Deployments lists every configured deployment, the main one first.
+func (c *Config) Deployments() []*Deployment {
+	if c.Private == nil {
+		return []*Deployment{&c.Deployment}
+	}
+	return []*Deployment{&c.Deployment, c.Private}
 }
 
 func Path() string {
@@ -53,7 +70,8 @@ func (e *NotConfiguredError) Error() string {
 }
 
 // Load reads the config file and overlays the DROPCUBE_ENDPOINT /
-// DROPCUBE_TOKEN env vars on top. The file is optional when the
+// DROPCUBE_TOKEN env vars on top, and DROPCUBE_PRIVATE_ENDPOINT /
+// DROPCUBE_PRIVATE_TOKEN for the private deployment. The file is optional when the
 // environment supplies the values.
 func Load() (*Config, error) {
 	path := Path()
@@ -79,6 +97,15 @@ func Load() (*Config, error) {
 	if v := os.Getenv("DROPCUBE_TOKEN"); v != "" {
 		cfg.Token = v
 	}
+	if v := os.Getenv("DROPCUBE_PRIVATE_ENDPOINT"); v != "" {
+		if cfg.Private == nil {
+			cfg.Private = &Deployment{}
+		}
+		cfg.Private.Endpoint = v
+	}
+	if v := os.Getenv("DROPCUBE_PRIVATE_TOKEN"); v != "" && cfg.Private != nil {
+		cfg.Private.Token = v
+	}
 	if !fileExists && cfg.Endpoint == "" && cfg.Token == "" {
 		return nil, &NotConfiguredError{Path: path}
 	}
@@ -92,16 +119,31 @@ func (c *Config) validate(path string) error {
 	// Real endpoints and tokens never contain angle brackets, so any
 	// <...> span means an unfilled placeholder, whichever starter text
 	// (install.sh, README, StarterConfig) it was copied from.
-	if strings.ContainsAny(c.Endpoint, "<>") || strings.ContainsAny(c.Token, "<>") {
+	if err := c.Deployment.validate(path, ""); err != nil {
+		return err
+	}
+	if c.Private != nil {
+		if c.Private.Token == "" {
+			c.Private.Token = c.Token
+		}
+		if err := c.Private.validate(path, "private."); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Deployment) validate(path, field string) error {
+	if strings.ContainsAny(d.Endpoint, "<>") || strings.ContainsAny(d.Token, "<>") {
 		return &NotConfiguredError{Path: path, Placeholder: true}
 	}
-	u, err := url.Parse(c.Endpoint)
+	u, err := url.Parse(d.Endpoint)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("invalid %s:\n  - endpoint: must be an http(s) URL", path)
+		return fmt.Errorf("invalid %s:\n  - %sendpoint: must be an http(s) URL", path, field)
 	}
-	if c.Token == "" {
-		return fmt.Errorf("invalid %s:\n  - token: missing", path)
+	if d.Token == "" {
+		return fmt.Errorf("invalid %s:\n  - %stoken: missing", path, field)
 	}
-	c.URL = u
+	d.URL = u
 	return nil
 }

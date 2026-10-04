@@ -17,8 +17,10 @@ var version = "dev"
 const usage = `Usage: dropcube <command>
 
 Commands:
-  upload <file>...   Upload files, printing one view link per line
-                     (links and files expire after 30 days)
+  upload [--private] <file>...
+                     Upload files, printing one view link per line
+                     (links and files expire after 30 days). --private
+                     sends them to the private deployment instead
   keep <link>...     Stop uploads expiring, keeping the same links
   remove <link>...   Delete uploads by their view links
   version            Print the installed version
