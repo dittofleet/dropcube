@@ -29,7 +29,7 @@ preview_urls = false
 
 [env.private.vars]
 PUBLIC_LINKS = "false"
-# ID_ONLY_LINKS = "true"   # keep filenames out of links too
+ID_ONLY_LINKS = "true"   # remove to put filenames in links
 
 [[env.private.r2_buckets]]
 binding = "BUCKET"

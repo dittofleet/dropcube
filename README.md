@@ -66,7 +66,7 @@ bunx wrangler secret put ACCESS_AUD --env private
 
 The worker refuses every request with 503 until both are set. It checks the signed login Access attaches to every view itself, rather than trusting that Access is in front, so a misconfigured or disabled Access application locks files away instead of exposing them.
 
-To keep filenames out of private links as well (`/f/<id>` instead of `/f/<id>/<name>`), uncomment `ID_ONLY_LINKS` in `wrangler.toml` and redeploy. The name still comes back as the download name once you are logged in. This applies to new uploads only.
+Private links leave out the filename too (`/f/<id>` instead of `/f/<id>/<name>`). The name still comes back as the download name once you are logged in. To put filenames in links instead, remove `ID_ONLY_LINKS` from `wrangler.toml` and redeploy. Either way, links already handed out keep working.
 
 Add it to the CLI config under `deployments` (see [Configuration](#configuration)), then upload with `dropcube upload --to private <file>`.
 
