@@ -64,16 +64,12 @@ func actOnLink(client *http.Client, cfg *config.Config, link, action string) err
 	}
 	// The token goes along with the request, so only ever send it to the
 	// worker it belongs to, never to whatever host a pasted link names.
-	dep := deploymentFor(cfg, u)
-	if dep == nil {
-		var hosts []string
-		for _, d := range cfg.Deployments() {
-			hosts = append(hosts, d.URL.Host)
-		}
-		return fmt.Errorf("not a link from %s", strings.Join(hosts, " or "))
+	dep, err := deploymentFor(cfg, u)
+	if err != nil {
+		return err
 	}
 
-	target := dep.URL.Scheme + "://" + dep.URL.Host + "/" + action + "/" + key
+	target := origin(dep.URL) + "/" + action + "/" + key
 	req, err := http.NewRequest(http.MethodPost, target, nil)
 	if err != nil {
 		return err
@@ -90,13 +86,15 @@ func actOnLink(client *http.Client, cfg *config.Config, link, action string) err
 	return nil
 }
 
-func deploymentFor(cfg *config.Config, link *url.URL) *config.Deployment {
+func deploymentFor(cfg *config.Config, link *url.URL) (*config.Deployment, error) {
+	var hosts []string
 	for _, d := range cfg.Deployments() {
 		if origin(d.URL) == origin(link) {
-			return d
+			return d, nil
 		}
+		hosts = append(hosts, d.URL.Host)
 	}
-	return nil
+	return nil, fmt.Errorf("not a link from %s", strings.Join(hosts, " or "))
 }
 
 // origin reduces a URL to the form the worker builds its links from (the JS

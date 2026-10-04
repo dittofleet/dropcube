@@ -28,6 +28,7 @@ workers_dev = false
 preview_urls = false
 
 [env.private.vars]
+PUBLIC_LINKS = "false"
 # ID_ONLY_LINKS = "true"   # keep filenames out of links too
 
 [[env.private.r2_buckets]]

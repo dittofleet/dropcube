@@ -116,9 +116,6 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) validate(path string) error {
-	// Real endpoints and tokens never contain angle brackets, so any
-	// <...> span means an unfilled placeholder, whichever starter text
-	// (install.sh, README, StarterConfig) it was copied from.
 	if err := c.Deployment.validate(path, ""); err != nil {
 		return err
 	}
@@ -134,6 +131,9 @@ func (c *Config) validate(path string) error {
 }
 
 func (d *Deployment) validate(path, field string) error {
+	// Real endpoints and tokens never contain angle brackets, so any
+	// <...> span means an unfilled placeholder, whichever starter text
+	// (install.sh, README, StarterConfig) it was copied from.
 	if strings.ContainsAny(d.Endpoint, "<>") || strings.ContainsAny(d.Token, "<>") {
 		return &NotConfiguredError{Path: path, Placeholder: true}
 	}

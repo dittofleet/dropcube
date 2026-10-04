@@ -61,8 +61,8 @@ function describeObject(o) {
   };
 }
 
-// Each test gets its own team domain, so the worker's per-team key cache
-// never carries a key from one test into the next.
+// Each test gets its own team domain, which resets the worker's key cache,
+// so no key carries over from one test into the next.
 let teamCount = 0;
 
 function setup(vars = {}) {

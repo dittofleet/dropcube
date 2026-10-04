@@ -29,14 +29,15 @@ const RETENTION_DAYS = 30;
 // removed, so pick a ceiling that a removal does not have to outwait.
 const KEEP_MAX_AGE = DAY;
 const VIEW_PREFIX = "/f/";
-const ACTIONS = ["keep", "remove"];
+// Routes that act on a file, as POST /<action>/<key>.
+const ACTIONS = { keep: handleKeep, remove: handleRemove };
 // How long fetched Access signing keys are trusted, and the least time
-// between refetches when a token names a key we do not have. The floor stops
-// a stream of made-up key ids from turning into a stream of fetches.
+// between fetch attempts (see accessKey).
 const ACCESS_KEYS_TTL = 3600 * 1000;
 const ACCESS_KEYS_REFETCH = 60 * 1000;
 
 const enc = new TextEncoder();
+const dec = new TextDecoder();
 
 export default {
   async fetch(request, env) {
@@ -54,12 +55,6 @@ export default {
         { status: 503 },
       );
 
-    // A service worker registered from one upload would see every file
-    // opened after it, and with id-only links its scope would be all of /f/.
-    // No real file needs to be one, so refuse to serve any as one.
-    if (request.headers.has("Service-Worker"))
-      return new Response("forbidden\n", { status: 403 });
-
     const url = new URL(request.url);
 
     if (request.method === "PUT") return handleUpload(request, url, env);
@@ -71,9 +66,10 @@ export default {
         headers: { Allow: "GET, HEAD" },
       });
     }
-    const action = ACTIONS.find((a) => url.pathname.startsWith(`/${a}/`));
+    const action = Object.keys(ACTIONS).find((a) => url.pathname.startsWith(`/${a}/`));
     if (action) {
-      if (request.method === "POST") return handleAction(request, url, env, action);
+      if (request.method === "POST")
+        return handleAction(request, url.pathname.slice(action.length + 2), env, ACTIONS[action]);
       return new Response("method not allowed\n", { status: 405, headers: { Allow: "POST" } });
     }
 
@@ -105,7 +101,9 @@ async function handleUpload(request, url, env) {
   // An id-only key has nowhere to carry the filename, so it rides along as
   // metadata and comes back out as the download name.
   const id = randomId();
-  const key = idOnly(env) ? id : `${id}/${filename}`;
+  const [key, path] = idOnly(env)
+    ? [id, id]
+    : [`${id}/${filename}`, `${id}/${encodeURIComponent(filename)}`];
   await env.BUCKET.put(key, request.body, {
     httpMetadata: {
       contentType: request.headers.get("Content-Type") ?? "application/octet-stream",
@@ -113,7 +111,6 @@ async function handleUpload(request, url, env) {
     customMetadata: { filename },
   });
 
-  const path = idOnly(env) ? id : `${id}/${encodeURIComponent(filename)}`;
   return new Response(`${url.origin}${VIEW_PREFIX}${path}\n`, {
     status: 201,
     headers: { "Content-Type": "text/plain" },
@@ -121,6 +118,12 @@ async function handleUpload(request, url, env) {
 }
 
 async function handleView(request, url, env) {
+  // A service worker registered from one upload would see every file
+  // opened after it, and with id-only links its scope would be all of /f/.
+  // No real file needs to be one, so refuse to serve any as one.
+  if (request.headers.has("Service-Worker"))
+    return new Response("forbidden\n", { status: 403 });
+
   if (!isPublic(env)) {
     const login = await accessLogin(request, env);
     if (login === null)
@@ -194,11 +197,11 @@ function timeLeft(object) {
   return RETENTION_DAYS * DAY - age;
 }
 
-async function handleAction(request, url, env, action) {
+async function handleAction(request, rawKey, env, handler) {
   if (!authorized(request, env)) return new Response("unauthorized\n", { status: 401 });
-  const key = safeDecode(url.pathname.slice(action.length + 2));
+  const key = safeDecode(rawKey);
   if (!key) return new Response("not found\n", { status: 404 });
-  return action === "keep" ? handleKeep(key, env) : handleRemove(key, env);
+  return handler(key, env);
 }
 
 async function handleRemove(key, env) {
@@ -331,34 +334,34 @@ function teamOrigin(env) {
   return `https://${domain}`;
 }
 
-// Signing keys per team, cached for the isolate's lifetime. Access rotates
-// keys from time to time, so a token naming a key we lack triggers a
-// refetch. Attempts, failed ones included, are spaced ACCESS_KEYS_REFETCH
-// apart, and requests arriving mid-fetch wait on the same one.
-const accessKeys = new Map();
+// Signing keys, cached for the isolate's lifetime. Access rotates keys from
+// time to time, so a token naming a key we lack triggers a refetch.
+// Attempts, failed ones included, are spaced ACCESS_KEYS_REFETCH apart, so a
+// stream of made-up key ids cannot become a stream of fetches. Requests
+// arriving mid-fetch wait on the same one. This is what a JWT library's
+// remote key set would do, kept in-house so the worker stays dependency-free.
+let cached = null;
 
 // Returns the key for kid, false when the team does not have it, or null
 // when the keys cannot be fetched.
 async function accessKey(team, kid) {
-  let cached = accessKeys.get(team);
-  if (!cached) {
-    cached = { keys: null, fetchedAt: 0, attemptedAt: -Infinity, pending: null };
-    accessKeys.set(team, cached);
-  }
+  if (cached?.team !== team)
+    cached = { team, keys: null, fetchedAt: 0, attemptedAt: -Infinity, pending: null };
+  const entry = cached;
   const now = Date.now();
-  const wanted = now - cached.fetchedAt > ACCESS_KEYS_TTL || !cached.keys?.has(kid);
-  if (wanted && !cached.pending && now - cached.attemptedAt > ACCESS_KEYS_REFETCH) {
-    cached.attemptedAt = now;
-    cached.pending = fetchAccessKeys(team).then((keys) => {
-      if (keys) Object.assign(cached, { keys, fetchedAt: Date.now() });
-      cached.pending = null;
+  const wanted = now - entry.fetchedAt > ACCESS_KEYS_TTL || !entry.keys?.has(kid);
+  if (wanted && !entry.pending && now - entry.attemptedAt > ACCESS_KEYS_REFETCH) {
+    entry.attemptedAt = now;
+    entry.pending = fetchAccessKeys(team).then((keys) => {
+      if (keys) Object.assign(entry, { keys, fetchedAt: Date.now() });
+      entry.pending = null;
     });
   }
-  if (cached.pending) await cached.pending;
+  if (entry.pending) await entry.pending;
   // When a refresh fails, the keys from the last good fetch keep serving
   // rather than locking every view out until Access answers again.
-  if (!cached.keys) return null;
-  return cached.keys.get(kid) ?? false;
+  if (!entry.keys) return null;
+  return entry.keys.get(kid) ?? false;
 }
 
 async function fetchAccessKeys(team) {
@@ -366,21 +369,15 @@ async function fetchAccessKeys(team) {
     const response = await fetch(`${team}/cdn-cgi/access/certs`);
     if (!response.ok) return null;
     const { keys } = await response.json();
-    const imported = new Map();
-    for (const jwk of keys ?? []) {
-      if (jwk.kty !== "RSA" || typeof jwk.kid !== "string") continue;
-      imported.set(
-        jwk.kid,
-        await crypto.subtle.importKey(
-          "jwk",
-          jwk,
-          { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-          false,
-          ["verify"],
-        ),
-      );
-    }
-    return imported;
+    const usable = (keys ?? []).filter((k) => k.kty === "RSA" && typeof k.kid === "string");
+    const imported = await Promise.all(
+      usable.map((jwk) =>
+        crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, [
+          "verify",
+        ]),
+      ),
+    );
+    return new Map(usable.map((jwk, i) => [jwk.kid, imported[i]]));
   } catch {
     return null;
   }
@@ -400,7 +397,7 @@ function base64UrlDecode(s) {
 function parseJson(bytes) {
   if (!bytes) return null;
   try {
-    const value = JSON.parse(new TextDecoder().decode(bytes));
+    const value = JSON.parse(dec.decode(bytes));
     return value && typeof value === "object" ? value : null;
   } catch {
     return null;
