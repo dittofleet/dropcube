@@ -25,8 +25,9 @@ func Keep(args []string) error {
 	return linkAction(args, "keep", 10*time.Minute)
 }
 
-// linkAction runs one of the worker's link actions over every given link,
-// each an authorized POST to the link plus "/<action>". The action names itself in the
+// linkAction runs one of the worker's link actions over every given link.
+// A link's /f/<key> becomes an authorized POST to /<action>/<key> on the
+// deployment the link came from. The action names itself in the
 // usage line and in every error, so the two cannot drift apart.
 func linkAction(args []string, action string, timeout time.Duration) error {
 	usage := fmt.Sprintf("usage: dropcube %s <link>...", action)
@@ -57,17 +58,23 @@ func actOnLink(client *http.Client, cfg *config.Config, link, action string) err
 	if err != nil || !u.IsAbs() || u.Host == "" {
 		return fmt.Errorf("not a link")
 	}
+	key, ok := strings.CutPrefix(strings.TrimSuffix(u.EscapedPath(), "/"), "/f/")
+	if !ok || key == "" {
+		return fmt.Errorf("not a dropcube link")
+	}
 	// The token goes along with the request, so only ever send it to the
 	// worker it belongs to, never to whatever host a pasted link names.
-	if origin(u) != origin(cfg.URL) {
-		return fmt.Errorf("not a link from %s", cfg.URL.Host)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, strings.TrimSuffix(u.String(), "/")+"/"+action, nil)
+	dep, err := deploymentFor(cfg, u)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+
+	target := origin(dep.URL) + "/" + action + "/" + key
+	req, err := http.NewRequest(http.MethodPost, target, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+dep.Token)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -77,6 +84,17 @@ func actOnLink(client *http.Client, cfg *config.Config, link, action string) err
 		return httpError(resp.StatusCode, body)
 	}
 	return nil
+}
+
+func deploymentFor(cfg *config.Config, link *url.URL) (*config.Deployment, error) {
+	var hosts []string
+	for _, d := range cfg.Deployments() {
+		if origin(d.URL) == origin(link) {
+			return d, nil
+		}
+		hosts = append(hosts, d.URL.Host)
+	}
+	return nil, fmt.Errorf("not a link from %s", strings.Join(hosts, " or "))
 }
 
 // origin reduces a URL to the form the worker builds its links from (the JS

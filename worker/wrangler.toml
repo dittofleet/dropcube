@@ -4,6 +4,11 @@ compatibility_date = "2026-08-01"
 workers_dev = false
 preview_urls = false
 
+# Anyone holding a link can view the file. Remove this to require a
+# Cloudflare Access login instead (see README).
+[vars]
+PUBLIC_LINKS = "true"
+
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "dropcube"
@@ -12,3 +17,24 @@ bucket_name = "dropcube"
 [[r2_buckets]]
 binding = "KEEP"
 bucket_name = "dropcube-keep"
+
+# A second, private deployment: `wrangler deploy --env private`. Viewing
+# takes an Access login, so it needs the ACCESS_TEAM_DOMAIN and ACCESS_AUD
+# secrets alongside API_TOKEN. Vars and buckets are not inherited from the
+# top level, so everything it needs is spelled out here.
+[env.private]
+name = "dropcube-private"
+workers_dev = false
+preview_urls = false
+
+[env.private.vars]
+PUBLIC_LINKS = "false"
+# ID_ONLY_LINKS = "true"   # keep filenames out of links too
+
+[[env.private.r2_buckets]]
+binding = "BUCKET"
+bucket_name = "dropcube-private"
+
+[[env.private.r2_buckets]]
+binding = "KEEP"
+bucket_name = "dropcube-private-keep"

@@ -16,16 +16,18 @@ import (
 	"github.com/dittofleet/dropcube/internal/config"
 )
 
-const uploadUsage = "usage: dropcube upload <file>..."
+const uploadUsage = "usage: dropcube upload [--private] <file>..."
 
 const (
 	uploadTimeout     = 10 * time.Minute
 	uploadConcurrency = 4
 )
 
-// Upload sends each file to the configured worker endpoint and prints one
-// view link per file, in argument order, to stdout.
+// Upload sends each file to the configured worker endpoint, or the private
+// one with --private, and prints one view link per file, in argument order,
+// to stdout.
 func Upload(args []string) error {
+	args, private := extractBoolFlag(args, "private")
 	if err := rejectUnknownFlags(args, uploadUsage); err != nil {
 		return err
 	}
@@ -36,6 +38,13 @@ func Upload(args []string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+	target := &cfg.Deployment
+	if private {
+		if cfg.Private == nil {
+			return fmt.Errorf("no private deployment in %s (add a \"private\" endpoint, or set DROPCUBE_PRIVATE_ENDPOINT)", config.Path())
+		}
+		target = cfg.Private
 	}
 
 	client := &http.Client{Timeout: uploadTimeout}
@@ -49,7 +58,7 @@ func Upload(args []string) error {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			links[i], errs[i] = uploadFile(client, cfg, path)
+			links[i], errs[i] = uploadFile(client, target, path)
 		}()
 	}
 	wg.Wait()
@@ -65,7 +74,7 @@ func Upload(args []string) error {
 	return errors.Join(failures...)
 }
 
-func uploadFile(client *http.Client, cfg *config.Config, path string) (string, error) {
+func uploadFile(client *http.Client, dep *config.Deployment, path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -83,8 +92,8 @@ func uploadFile(client *http.Client, cfg *config.Config, path string) (string, e
 	// Set Path (unescaped) and clear RawPath so URL.String escapes the
 	// filename for us. JoinPath would instead read it as already-escaped and
 	// mangle any name containing a percent sign.
-	target := *cfg.URL
-	target.Path = strings.TrimSuffix(cfg.URL.Path, "/") + "/" + name
+	target := *dep.URL
+	target.Path = strings.TrimSuffix(dep.URL.Path, "/") + "/" + name
 	target.RawPath = ""
 
 	// A non-nil Body with ContentLength 0 means "unknown length" to net/http,
@@ -99,7 +108,7 @@ func uploadFile(client *http.Client, cfg *config.Config, path string) (string, e
 		return "", err
 	}
 	req.ContentLength = info.Size()
-	req.Header.Set("Authorization", "Bearer "+cfg.Token)
+	req.Header.Set("Authorization", "Bearer "+dep.Token)
 	// The worker defaults absent Content-Type to application/octet-stream;
 	// only send a header when the extension yields something better.
 	if contentType := mime.TypeByExtension(filepath.Ext(name)); contentType != "" {
