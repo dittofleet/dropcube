@@ -24,6 +24,29 @@ func extractBoolFlag(args []string, name string) (rest []string, set bool) {
 	return rest, set
 }
 
+// extractValueFlag removes `--name value` or `--name=value` from args and
+// returns the remaining args plus the value ("" when the flag is absent).
+func extractValueFlag(args []string, name string) (rest []string, value string, err error) {
+	rest = make([]string, 0, len(args))
+	flag := "--" + name
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == flag:
+			if i+1 == len(args) {
+				return nil, "", fmt.Errorf("%s needs a value", flag)
+			}
+			i++
+			value = args[i]
+		case strings.HasPrefix(a, flag+"="):
+			value = strings.TrimPrefix(a, flag+"=")
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return rest, value, nil
+}
+
 // rejectUnknownFlags errors on the first remaining `--*` token. Call it
 // after the known flags have been extracted.
 func rejectUnknownFlags(args []string, usage string) error {

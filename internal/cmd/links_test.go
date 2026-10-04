@@ -36,7 +36,10 @@ func deployment(t *testing.T, endpoint, token string) config.Deployment {
 func TestActOnLinkRoutesToTheLinksDeployment(t *testing.T) {
 	main, private := newRecorder(t), newRecorder(t)
 	priv := deployment(t, private.URL, "tok-private")
-	cfg := &config.Config{Deployment: deployment(t, main.URL, "tok-main"), Private: &priv}
+	cfg := &config.Config{
+		Deployment:  deployment(t, main.URL, "tok-main"),
+		Deployments: map[string]*config.Deployment{"private": &priv},
+	}
 
 	for _, c := range []struct{ link, action string }{
 		{main.URL + "/f/0123456789abcdef/a%20b.txt", "keep"},
@@ -73,5 +76,24 @@ func TestActOnLinkRefusesOtherLinks(t *testing.T) {
 	}
 	if len(main.got) != 0 {
 		t.Errorf("refused links still reached the worker: %q", main.got)
+	}
+}
+
+func TestExtractValueFlag(t *testing.T) {
+	for _, c := range []struct {
+		args       []string
+		rest, want string
+	}{
+		{[]string{"--to", "work", "a.txt"}, "a.txt", "work"},
+		{[]string{"a.txt", "--to=work", "b.txt"}, "a.txt b.txt", "work"},
+		{[]string{"a.txt"}, "a.txt", ""},
+	} {
+		rest, got, err := extractValueFlag(c.args, "to")
+		if err != nil || got != c.want || strings.Join(rest, " ") != c.rest {
+			t.Errorf("%q: rest %q, value %q, err %v", c.args, rest, got, err)
+		}
+	}
+	if _, _, err := extractValueFlag([]string{"a.txt", "--to"}, "to"); err == nil {
+		t.Error("a trailing --to with no value should be an error")
 	}
 }

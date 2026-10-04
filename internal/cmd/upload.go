@@ -16,18 +16,20 @@ import (
 	"github.com/dittofleet/dropcube/internal/config"
 )
 
-const uploadUsage = "usage: dropcube upload [--private] <file>..."
+const uploadUsage = "usage: dropcube upload [--to <deployment>] <file>..."
 
 const (
 	uploadTimeout     = 10 * time.Minute
 	uploadConcurrency = 4
 )
 
-// Upload sends each file to the configured worker endpoint, or the private
-// one with --private, and prints one view link per file, in argument order,
-// to stdout.
+// Upload sends each file to the default deployment, or the one named with
+// --to, and prints one view link per file, in argument order, to stdout.
 func Upload(args []string) error {
-	args, private := extractBoolFlag(args, "private")
+	args, to, err := extractValueFlag(args, "to")
+	if err != nil {
+		return fmt.Errorf("%w\n%s", err, uploadUsage)
+	}
 	if err := rejectUnknownFlags(args, uploadUsage); err != nil {
 		return err
 	}
@@ -40,11 +42,10 @@ func Upload(args []string) error {
 		return err
 	}
 	target := &cfg.Deployment
-	if private {
-		if cfg.Private == nil {
-			return fmt.Errorf("no private deployment in %s (add a \"private\" endpoint, or set DROPCUBE_PRIVATE_ENDPOINT)", config.Path())
+	if to != "" {
+		if target, err = cfg.Find(to); err != nil {
+			return err
 		}
-		target = cfg.Private
 	}
 
 	client := &http.Client{Timeout: uploadTimeout}

@@ -88,7 +88,7 @@ func actOnLink(client *http.Client, cfg *config.Config, link, action string) err
 
 func deploymentFor(cfg *config.Config, link *url.URL) (*config.Deployment, error) {
 	var hosts []string
-	for _, d := range cfg.Deployments() {
+	for _, d := range cfg.All() {
 		if origin(d.URL) == origin(link) {
 			return d, nil
 		}

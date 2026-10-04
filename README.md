@@ -68,7 +68,9 @@ The worker refuses every request with 503 until both are set. It checks the sign
 
 To keep filenames out of private links as well (`/f/<id>` instead of `/f/<id>/<name>`), uncomment `ID_ONLY_LINKS` in `wrangler.toml` and redeploy. The name still comes back as the download name once you are logged in. This applies to new uploads only.
 
-Point the CLI at it with a `private` section in the config (see [Configuration](#configuration)), then upload with `dropcube upload --private <file>`.
+Add it to the CLI config under `deployments` (see [Configuration](#configuration)), then upload with `dropcube upload --to private <file>`.
+
+The environment name `private` is only a convention. Any number of `[env.<name>]` sections can sit in `wrangler.toml`, each with its own worker name, buckets, and `PUBLIC_LINKS` / `ID_ONLY_LINKS` settings.
 
 ## Installing the CLI
 
@@ -91,10 +93,11 @@ Supported platforms: macOS (arm64, x64), Linux (arm64, x64).
 ## Usage
 
 ```sh
-dropcube upload report.html    # prints one view link per file
-dropcube upload --private x.pdf  # same, to the private deployment
-dropcube keep <link>           # stop a file expiring, same link
-dropcube remove <link>         # delete an upload early
+dropcube upload report.html          # prints one view link per file
+dropcube upload --to private x.pdf   # same, to another deployment
+dropcube deployments                 # list the deployments --to can pick
+dropcube keep <link>                 # stop a file expiring, same link
+dropcube remove <link>               # delete an upload early
 ```
 
 Links print to stdout, one per file in argument order, pipe-friendly for agents. Anyone with a link (and, on a private deployment, your Access login) can view for 30 days, then the file is deleted and the link dies with it. Nobody can enumerate or guess links.
@@ -148,21 +151,23 @@ Removes the binary, `~/.config/dropcube/`, and `~/.local/share/dropcube/` (updat
 }
 ```
 
-For a private deployment, add a `private` section. Its `token` can be left out when both deployments share one.
+The top-level `endpoint` is the default deployment. Further deployments go under `deployments`, keyed by the name `upload --to` takes. A `token` can be left out when it matches the top-level one. A `description` is optional, but it is what `dropcube deployments` shows agents to help them choose, so say what the deployment is for.
 
 ```json
 {
   "schemaVersion": 1,
   "endpoint": "https://dropcube.<you>.workers.dev",
   "token": "<API token>",
-  "private": {
-    "endpoint": "https://<your private domain>",
-    "token": "<API token>"
+  "deployments": {
+    "private": {
+      "endpoint": "https://<your private domain>",
+      "description": "Viewing needs the user's login. Use when the user asks for a private upload."
+    }
   }
 }
 ```
 
-`DROPCUBE_ENDPOINT`, `DROPCUBE_TOKEN`, `DROPCUBE_PRIVATE_ENDPOINT` and `DROPCUBE_PRIVATE_TOKEN` env vars override the file.
+`DROPCUBE_ENDPOINT` and `DROPCUBE_TOKEN` env vars override the top-level values.
 
 ## Development
 

@@ -17,10 +17,11 @@ var version = "dev"
 const usage = `Usage: dropcube <command>
 
 Commands:
-  upload [--private] <file>...
+  upload [--to <deployment>] <file>...
                      Upload files, printing one view link per line
-                     (links and files expire after 30 days). --private
-                     sends them to the private deployment instead
+                     (links and files expire after 30 days). --to picks
+                     a deployment other than the default
+  deployments        List the deployments --to can pick, with what each is for
   keep <link>...     Stop uploads expiring, keeping the same links
   remove <link>...   Delete uploads by their view links
   version            Print the installed version
@@ -70,6 +71,8 @@ func dispatch(args []string) error {
 		return cmd.Keep(args[1:])
 	case "remove":
 		return cmd.Remove(args[1:])
+	case "deployments":
+		return cmd.Deployments(args[1:])
 	case "update":
 		return cmd.SelfUpdate(version)
 	case "uninstall":
