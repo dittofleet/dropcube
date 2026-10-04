@@ -211,12 +211,19 @@ describe("Access mode", () => {
   const privateSetup = () => setup({ ACCESS_TEAM_DOMAIN: team, ACCESS_AUD: AUD });
   const login = (token) => ({ "Cf-Access-Jwt-Assertion": token });
 
-  test("a valid Access login can view", async () => {
+  test("a valid Access login can view, and the browser must recheck it next time", async () => {
     const { call } = privateSetup();
     const link = await upload(call);
     const view = await call("GET", link, login(await jwt()));
     expect(view.status).toBe(200);
     expect(await view.text()).toBe("hello");
+    expect(view.headers.get("Cache-Control")).toBe("private, no-cache");
+  });
+
+  test("the team domain is always fetched over https", async () => {
+    const { call } = setup({ ACCESS_TEAM_DOMAIN: `http://${team}/`, ACCESS_AUD: AUD });
+    const link = await upload(call);
+    expect((await call("GET", link, login(await jwt()))).status).toBe(200);
   });
 
   test("bad logins are refused", async () => {
@@ -275,10 +282,23 @@ describe("Access mode", () => {
     expect(certFetches).toBe(1);
   });
 
-  test("unreachable signing keys fail closed", async () => {
+  test("unreachable signing keys fail closed, and failures are not retried every request", async () => {
     const { call } = privateSetup();
     const link = await upload(call);
     certsDown = true;
-    expect((await call("GET", link, login(await jwt()))).status).toBe(503);
+    const token = await jwt();
+    const views = await Promise.all([1, 2, 3].map(() => call("GET", link, login(token))));
+    expect(views.map((v) => v.status)).toEqual([503, 503, 503]);
+    expect((await call("GET", link, login(token))).status).toBe(503);
+    expect(certFetches).toBe(1);
+  });
+
+  test("concurrent first views share one key fetch", async () => {
+    const { call } = privateSetup();
+    const link = await upload(call);
+    const token = await jwt();
+    const views = await Promise.all([1, 2, 3].map(() => call("GET", link, login(token))));
+    expect(views.map((v) => v.status)).toEqual([200, 200, 200]);
+    expect(certFetches).toBe(1);
   });
 });

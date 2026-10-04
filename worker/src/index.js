@@ -141,7 +141,13 @@ async function handleView(request, url, env) {
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
   headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("Cache-Control", `private, max-age=${maxAge}`);
+  // A private file must go back through the login check on every view, or
+  // the browser would keep showing it after the Access session ends. The
+  // etag still makes an unchanged file a cheap 304.
+  headers.set(
+    "Cache-Control",
+    isPublic(env) ? `private, max-age=${maxAge}` : "private, no-cache",
+  );
   // filename is already sanitized at upload time, but encode at the header
   // layer anyway so Content-Disposition stays valid whatever the sanitizer
   // allows in the future.
@@ -318,31 +324,40 @@ async function accessLogin(request, env) {
 }
 
 // ACCESS_TEAM_DOMAIN may be given bare ("team.cloudflareaccess.com") or as
-// a URL. Tokens name the team as an https origin.
+// a URL. Either way the keys are fetched over https, and tokens name the
+// team as that https origin.
 function teamOrigin(env) {
-  const domain = env.ACCESS_TEAM_DOMAIN.replace(/\/+$/, "");
-  return /^https?:\/\//.test(domain) ? domain : `https://${domain}`;
+  const domain = env.ACCESS_TEAM_DOMAIN.replace(/^[a-z]+:\/\//i, "").replace(/\/+$/, "");
+  return `https://${domain}`;
 }
 
 // Signing keys per team, cached for the isolate's lifetime. Access rotates
 // keys from time to time, so a token naming a key we lack triggers a
-// refetch, no more often than ACCESS_KEYS_REFETCH allows.
+// refetch. Attempts, failed ones included, are spaced ACCESS_KEYS_REFETCH
+// apart, and requests arriving mid-fetch wait on the same one.
 const accessKeys = new Map();
 
 // Returns the key for kid, false when the team does not have it, or null
 // when the keys cannot be fetched.
 async function accessKey(team, kid) {
   let cached = accessKeys.get(team);
-  const age = cached ? Date.now() - cached.fetchedAt : Infinity;
-  if (age > ACCESS_KEYS_TTL || (!cached.keys.has(kid) && age > ACCESS_KEYS_REFETCH)) {
-    const keys = await fetchAccessKeys(team);
-    if (keys) {
-      cached = { keys, fetchedAt: Date.now() };
-      accessKeys.set(team, cached);
-    } else if (!cached) {
-      return null;
-    }
+  if (!cached) {
+    cached = { keys: null, fetchedAt: 0, attemptedAt: -Infinity, pending: null };
+    accessKeys.set(team, cached);
   }
+  const now = Date.now();
+  const wanted = now - cached.fetchedAt > ACCESS_KEYS_TTL || !cached.keys?.has(kid);
+  if (wanted && !cached.pending && now - cached.attemptedAt > ACCESS_KEYS_REFETCH) {
+    cached.attemptedAt = now;
+    cached.pending = fetchAccessKeys(team).then((keys) => {
+      if (keys) Object.assign(cached, { keys, fetchedAt: Date.now() });
+      cached.pending = null;
+    });
+  }
+  if (cached.pending) await cached.pending;
+  // When a refresh fails, the keys from the last good fetch keep serving
+  // rather than locking every view out until Access answers again.
+  if (!cached.keys) return null;
   return cached.keys.get(kid) ?? false;
 }
 
