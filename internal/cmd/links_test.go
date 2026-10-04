@@ -93,7 +93,9 @@ func TestExtractValueFlag(t *testing.T) {
 			t.Errorf("%q: rest %q, value %q, err %v", c.args, rest, got, err)
 		}
 	}
-	if _, _, err := extractValueFlag([]string{"a.txt", "--to"}, "to"); err == nil {
-		t.Error("a trailing --to with no value should be an error")
+	for _, args := range [][]string{{"a.txt", "--to"}, {"--to=", "a.txt"}, {"--to", "", "a.txt"}} {
+		if _, _, err := extractValueFlag(args, "to"); err == nil {
+			t.Errorf("%q: a --to with no value should be an error", args)
+		}
 	}
 }

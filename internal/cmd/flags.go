@@ -26,6 +26,8 @@ func extractBoolFlag(args []string, name string) (rest []string, set bool) {
 
 // extractValueFlag removes `--name value` or `--name=value` from args and
 // returns the remaining args plus the value ("" when the flag is absent).
+// A flag given with an empty value is an error rather than reading as
+// absent: `--to "$UNSET"` must not quietly mean the default.
 func extractValueFlag(args []string, name string) (rest []string, value string, err error) {
 	rest = make([]string, 0, len(args))
 	flag := "--" + name
@@ -33,15 +35,18 @@ func extractValueFlag(args []string, name string) (rest []string, value string, 
 		a := args[i]
 		switch {
 		case a == flag:
-			if i+1 == len(args) {
-				return nil, "", fmt.Errorf("%s needs a value", flag)
+			if i+1 < len(args) {
+				i++
+				value = args[i]
 			}
-			i++
-			value = args[i]
 		case strings.HasPrefix(a, flag+"="):
 			value = strings.TrimPrefix(a, flag+"=")
 		default:
 			rest = append(rest, a)
+			continue
+		}
+		if value == "" {
+			return nil, "", fmt.Errorf("%s needs a value", flag)
 		}
 	}
 	return rest, value, nil
