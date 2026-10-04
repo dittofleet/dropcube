@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -58,7 +59,7 @@ func actOnLink(client *http.Client, cfg *config.Config, link, action string) err
 	}
 	// The token goes along with the request, so only ever send it to the
 	// worker it belongs to, never to whatever host a pasted link names.
-	if u.Scheme != cfg.URL.Scheme || u.Host != cfg.URL.Host {
+	if origin(u) != origin(cfg.URL) {
 		return fmt.Errorf("not a link from %s", cfg.URL.Host)
 	}
 
@@ -76,4 +77,19 @@ func actOnLink(client *http.Client, cfg *config.Config, link, action string) err
 		return httpError(resp.StatusCode, body)
 	}
 	return nil
+}
+
+// origin reduces a URL to the form the worker builds its links from (the JS
+// URL.origin): lowercased host, and a port only when it is not the scheme's
+// default. Comparing raw hosts would reject links from an endpoint written
+// as https://Drop.example or https://drop.example:443.
+func origin(u *url.URL) string {
+	host, port := strings.ToLower(u.Hostname()), u.Port()
+	if (u.Scheme == "https" && port == "443") || (u.Scheme == "http" && port == "80") {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	}
+	return u.Scheme + "://" + host
 }
