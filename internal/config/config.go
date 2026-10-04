@@ -33,7 +33,7 @@ func Path() string {
 const StarterConfig = `{
   "schemaVersion": 1,
   "endpoint": "https://dropcube.<your-subdomain>.workers.dev",
-  "token": "<upload token>"
+  "token": "<API token>"
 }`
 
 // NotConfiguredError is returned by Load when no usable config exists,

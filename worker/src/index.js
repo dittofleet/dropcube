@@ -1,14 +1,15 @@
 // dropcube: write-only file drop for agents, capability-URL viewing for me.
 //
-// PUT /<filename>        (Authorization: Bearer <UPLOAD_TOKEN>)  -> view URL
-// GET /f/<id>/<filename>                                         -> file contents
-// GET /f/<id>/<filename>/keep                                    -> stop it expiring
-// GET /f/<id>/<filename>/remove                                  -> delete the file
+// PUT  /<filename>               (Authorization: Bearer <API_TOKEN>)  -> view URL
+// GET  /f/<id>/<filename>                                             -> file contents
+// POST /f/<id>/<filename>/keep    (Authorization: Bearer <API_TOKEN>)  -> stop it expiring
+// POST /f/<id>/<filename>/remove  (Authorization: Bearer <API_TOKEN>)  -> delete the file
 //
-// A link is a pure capability: the unguessable random id is the whole
-// secret, and holding it grants everything about that one file (view it,
-// keep it, remove it) and nothing else. Uploads live for 30 days, then the
-// bucket's lifecycle rule deletes them and the link dies with them.
+// A link is a view capability: the unguessable random id is the whole
+// secret for reading that one file. Changing what happens to it (keep,
+// remove) also takes the token, so a shared link cannot be used to delete
+// or pin the file. Uploads live for 30 days, then the bucket's lifecycle
+// rule deletes them and the link dies with them.
 //
 // Keeping a file moves it to a second bucket that has no lifecycle rule.
 // That rule is bucket-wide and cannot read anything off an object, so
@@ -28,26 +29,21 @@ const enc = new TextEncoder();
 export default {
   async fetch(request, env) {
     // Fail closed when the worker is deployed without its secret. Without
-    // this, an unset UPLOAD_TOKEN makes the expected header the literal
+    // this, an unset API_TOKEN makes the expected header the literal
     // string "Bearer undefined", which anyone can send.
-    if (!isNonEmptyString(env.UPLOAD_TOKEN))
-      return new Response("worker not configured: set UPLOAD_TOKEN\n", { status: 503 });
+    if (!isNonEmptyString(env.API_TOKEN))
+      return new Response("worker not configured: set API_TOKEN\n", { status: 503 });
 
     const url = new URL(request.url);
 
     if (request.method === "PUT") return handleUpload(request, url, env);
     if (url.pathname.startsWith(VIEW_PREFIX)) {
-      if (request.method === "GET") {
-        const toRemove = actionKey(url.pathname, "remove");
-        if (toRemove !== null) return handleRemove(toRemove, env);
-        const toKeep = actionKey(url.pathname, "keep");
-        if (toKeep !== null) return handleKeep(toKeep, env);
-      }
+      if (request.method === "POST") return handleAction(request, url, env);
       if (request.method === "GET" || request.method === "HEAD")
         return handleView(request, url, env);
       return new Response("method not allowed\n", {
         status: 405,
-        headers: { Allow: "GET, HEAD" },
+        headers: { Allow: "GET, HEAD, POST" },
       });
     }
 
@@ -55,10 +51,13 @@ export default {
   },
 };
 
-async function handleUpload(request, url, env) {
+function authorized(request, env) {
   const auth = request.headers.get("Authorization") ?? "";
-  if (!timingSafeEqual(auth, `Bearer ${env.UPLOAD_TOKEN}`))
-    return new Response("unauthorized\n", { status: 401 });
+  return timingSafeEqual(auth, `Bearer ${env.API_TOKEN}`);
+}
+
+async function handleUpload(request, url, env) {
+  if (!authorized(request, env)) return new Response("unauthorized\n", { status: 401 });
 
   const raw = safeDecode(url.pathname.slice(1));
   if (raw === null) return new Response("malformed path\n", { status: 400 });
@@ -137,6 +136,15 @@ function timeLeft(object) {
   return RETENTION_DAYS * DAY - age;
 }
 
+async function handleAction(request, url, env) {
+  if (!authorized(request, env)) return new Response("unauthorized\n", { status: 401 });
+  const toRemove = actionKey(url.pathname, "remove");
+  if (toRemove !== null) return handleRemove(toRemove, env);
+  const toKeep = actionKey(url.pathname, "keep");
+  if (toKeep !== null) return handleKeep(toKeep, env);
+  return new Response("not found\n", { status: 404 });
+}
+
 async function handleRemove(key, env) {
   await Promise.all([env.BUCKET.delete(key), env.KEEP.delete(key)]);
   return new Response("removed\n", { status: 200 });
@@ -182,8 +190,8 @@ async function handleKeep(key, env) {
 
 // An action is a view URL plus "/keep" or "/remove". Returns the object key
 // to act on, or null when the path is not that action. The key must keep its
-// id/filename shape so that a file literally named "keep" or "remove" still
-// views normally (its action URL simply has one more segment).
+// id/filename shape, so a file literally named "keep" or "remove" still gets
+// its own action URL (one more segment) rather than being mistaken for one.
 function actionKey(pathname, action) {
   const suffix = `/${action}`;
   if (!pathname.endsWith(suffix)) return null;

@@ -17,7 +17,7 @@ Prints one URL per file to stdout (multiple files allowed, links in argument ord
 
 - **NEVER upload secrets** (API keys, credentials, .env files) or sensitive files through dropcube.
 - Links work for 30 days after upload, then the file is deleted. You do not need to mention this to the user.
-- Links are unguessable, and anyone holding one can view (or remove) that file until it expires.
+- Links are unguessable, and anyone holding one can view that file until it expires.
 - To delete an upload early (wrong file, stale version), run `dropcube remove <link>`.
 - If the user wants a file to outlive the 30 days, `dropcube keep <link>` stops it expiring and the link stays the same. This is the user's call, not something to do on your own.
 - You cannot list or read back previous uploads, and a lost link cannot be recovered. Keep the printed URL.
