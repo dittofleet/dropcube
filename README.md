@@ -21,12 +21,12 @@ cd worker
 bunx wrangler login
 bunx wrangler r2 bucket create dropcube
 bunx wrangler r2 bucket create dropcube-keep   # holds files you choose to keep
-bunx wrangler deploy                      # prints https://dropcube.<you>.workers.dev
+bunx wrangler deploy --env=""             # the top-level (public) deployment
 # Until the secret below is set, the worker refuses every request with 503.
 
 # API token: generate, save for the machines, set as worker secret
 openssl rand -hex 32                      # keep this value, it is DROPCUBE_TOKEN
-bunx wrangler secret put API_TOKEN        # paste it when prompted
+bunx wrangler secret put API_TOKEN --env=""   # paste it when prompted
 
 # Auto-delete uploads after 30 days. Keep this equal to RETENTION_DAYS in
 # worker/src/index.js, which is what the worker tells browsers and what it
