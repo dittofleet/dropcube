@@ -14,7 +14,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dittofleet/dropcube/internal/xdg"
+	"github.com/dittofleet/dropcube/internal/app"
+	"github.com/dittofleet/go-cli-kit/xdg"
 )
 
 const SchemaVersion = 1
@@ -72,7 +73,7 @@ func (c *Config) Find(name string) (*Deployment, error) {
 }
 
 func Path() string {
-	return filepath.Join(xdg.ConfigDir("dropcube"), "config.json")
+	return filepath.Join(xdg.ConfigDir(app.Name), "config.json")
 }
 
 // StarterConfig is the recommended starter content for a fresh install.

@@ -8,7 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dittofleet/dropcube/internal/xdg"
+	"github.com/dittofleet/dropcube/internal/app"
+	clikit "github.com/dittofleet/go-cli-kit"
+	"github.com/dittofleet/go-cli-kit/xdg"
 	"golang.org/x/term"
 )
 
@@ -17,7 +19,7 @@ const uninstallUsage = "usage: dropcube uninstall [--yes]"
 // Uninstall removes the dropcube binary, config directory, and data
 // directory. Order is data → config → binary so a failure leaves a
 // tool to retry with.
-func Uninstall(args []string, version string) error {
+func Uninstall(args []string, a clikit.App) error {
 	args, yes := extractBoolFlag(args, "yes")
 	if err := rejectUnknownFlags(args, uninstallUsage); err != nil {
 		return err
@@ -26,17 +28,17 @@ func Uninstall(args []string, version string) error {
 		return fmt.Errorf("unexpected arguments: %v\n%s", args, uninstallUsage)
 	}
 
-	if version == "dev" {
+	if a.IsDev() {
 		return errors.New("cannot uninstall a dev build")
 	}
 
-	binaryPath, err := resolveExecutable()
+	binaryPath, err := clikit.Executable()
 	if err != nil {
 		return fmt.Errorf("cannot determine binary path: %w", err)
 	}
 
-	configDir := xdg.ConfigDir("dropcube")
-	dataDir := xdg.DataDir("dropcube")
+	configDir := xdg.ConfigDir(app.Name)
+	dataDir := xdg.DataDir(app.Name)
 
 	fmt.Println("This will remove:")
 	fmt.Printf("  - Binary:  %s\n", binaryPath)
