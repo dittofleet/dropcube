@@ -119,9 +119,9 @@ npx skills add https://github.com/dittofleet/dropcube
 
 ## Updating
 
-`dropcube` checks once per day for new releases and prints a hint to stderr when an update is available.
+`dropcube` updates itself: at most once a day, after a command, it installs a newer release if one is out.
 
-Run `dropcube update` to upgrade.
+Run `dropcube update` to do the same right away.
 
 The check is automatically skipped when:
 
