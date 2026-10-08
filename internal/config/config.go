@@ -192,7 +192,7 @@ func Origin(u *url.URL) string {
 func (d *Deployment) validate(path, field string) error {
 	// Real endpoints and tokens never contain angle brackets, so any
 	// <...> span means an unfilled placeholder, whichever starter text
-	// (install.sh, README, StarterConfig) it was copied from.
+	// (postinstall, README, StarterConfig) it was copied from.
 	if strings.ContainsAny(d.Endpoint, "<>") || strings.ContainsAny(d.Token, "<>") {
 		// The starter config has no deployments section, so pointing at
 		// it would not help. Name the section instead.
