@@ -1,5 +1,5 @@
-github.com/dittofleet/go-cli-kit v0.2.0 h1:+X/WAKOzg/CqkKgvHT6idHfS+OczYFgK2uvbxLXbJF4=
-github.com/dittofleet/go-cli-kit v0.2.0/go.mod h1:68jAp6SWsr0BaEcIIgftWDxwLxUwMMKdZsHoPldjmqM=
+github.com/dittofleet/go-cli-kit v0.3.0 h1:iL/NB8hvpABkwbi1EUSo9FUED0xgiNlj/vuHnwoKTYk=
+github.com/dittofleet/go-cli-kit v0.3.0/go.mod h1:68jAp6SWsr0BaEcIIgftWDxwLxUwMMKdZsHoPldjmqM=
 golang.org/x/sys v0.44.0 h1:ildZl3J4uzeKP07r2F++Op7E9B29JRUy+a27EibtBTQ=
 golang.org/x/sys v0.44.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
 golang.org/x/term v0.43.0 h1:S4RLU2sB31O/NCl+zFN9Aru9A/Cq2aqKpTZJ6B+DwT4=

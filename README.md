@@ -75,7 +75,7 @@ The environment name `private` is only a convention. Any number of `[env.<name>]
 ## Installing the CLI
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dittofleet/dropcube/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/dittofleet/.github/main/install.sh | sh -s dropcube
 ```
 
 Installs the latest release to `~/.local/bin/dropcube` (override with `DROPCUBE_INSTALL_DIR`) and sets up `~/.config/dropcube/config.json`. When a terminal is attached the installer prompts for your endpoint and token (press Enter to skip), and otherwise it creates a starter config for you to fill in.
@@ -83,9 +83,9 @@ Installs the latest release to `~/.local/bin/dropcube` (override with `DROPCUBE_
 **Provisioning a remote machine in one line**: pass the endpoint and token to the installer and it writes a ready-to-use config instead of the starter. The assignments go on the `sh` side of the pipe, because a prefix before `curl` would never reach the shell running the script:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dittofleet/dropcube/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/dittofleet/.github/main/install.sh \
   | DROPCUBE_ENDPOINT=https://<your dropcube domain> \
-    DROPCUBE_TOKEN=<API token> sh
+    DROPCUBE_TOKEN=<API token> sh -s dropcube
 ```
 
 Supported platforms: macOS (arm64, x64), Linux (arm64, x64).

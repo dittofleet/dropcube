@@ -80,6 +80,8 @@ func dispatch(dropcube clikit.App, args []string) error {
 		return err
 	case "uninstall":
 		return cmd.Uninstall(args[1:], dropcube)
+	case "postinstall":
+		return cmd.Postinstall(dropcube)
 	case "version", "--version", "-v":
 		fmt.Println(version)
 		return nil
