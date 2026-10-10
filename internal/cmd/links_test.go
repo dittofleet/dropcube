@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -76,5 +79,27 @@ func TestActOnLinkRefusesOtherLinks(t *testing.T) {
 	}
 	if len(main.got) != 0 {
 		t.Errorf("refused links still reached the worker: %q", main.got)
+	}
+}
+
+func TestReplaceSendsTheFileToTheLinksDeployment(t *testing.T) {
+	var got string
+	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got = r.Method + " " + r.URL.EscapedPath() + " " + r.Header.Get("Authorization") + " " + r.Header.Get("Content-Type") + " " + string(body)
+	}))
+	t.Cleanup(worker.Close)
+	cfg := &config.Config{Deployment: deployment(t, worker.URL, "tok-main")}
+
+	file := filepath.Join(t.TempDir(), "v2.html")
+	os.WriteFile(file, []byte("<p>new</p>"), 0o600)
+	if err := replace(cfg, worker.URL+"/f/0123456789abcdef/a%20b.html", file); err != nil {
+		t.Fatal(err)
+	}
+	if err := replace(cfg, worker.URL+"/f/0123456789abcdef/a%20b.html", ""); err == nil {
+		t.Error("an empty file argument was sent")
+	}
+	if want := "POST /replace/0123456789abcdef/a%20b.html Bearer tok-main text/html; charset=utf-8 <p>new</p>"; got != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

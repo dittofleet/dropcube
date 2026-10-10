@@ -4,7 +4,7 @@
 
 Dropbox, minus almost everything: a write-only file drop for agents on remote machines, with capability-URL viewing for you.
 
-Agents run `dropcube upload <file>` and get back a private link to send you. The API token can upload, and keep or remove a file you also hold the link to. It can never read or list files, so a leaked token on a remote machine exposes nothing. View links are unguessable and expire server-side. A second, private deployment can also require your Cloudflare Access login before anything is shown.
+Agents run `dropcube upload <file>` and get back a private link to send you. The API token can upload, and keep, remove or replace a file you also hold the link to. It can never read or list files, so a leaked token on a remote machine exposes nothing. View links are unguessable and expire server-side. A second, private deployment can also require your Cloudflare Access login before anything is shown.
 
 Three parts:
 
@@ -29,8 +29,8 @@ openssl rand -hex 32                      # keep this value, it is DROPCUBE_TOKE
 bunx wrangler secret put API_TOKEN --env=""   # paste it when prompted
 
 # Auto-delete uploads after 30 days. Keep this equal to RETENTION_DAYS in
-# worker/src/index.js, which is what the worker tells browsers and what it
-# answers once the deadline passes but before the deletion sweep runs. The
+# worker/src/index.js, which is what the worker answers by once the
+# deadline passes but before the deletion sweep runs. The
 # rule goes on this bucket only: `dropcube keep` works by moving a file to
 # dropcube-keep, which has no rule.
 bunx wrangler r2 bucket lifecycle add dropcube expire-after-30d --expire-days 30
@@ -42,7 +42,7 @@ bunx wrangler r2 bucket lifecycle add dropcube expire-after-30d --expire-days 30
 
 ## Private deployment (optional)
 
-A second deployment can require a Cloudflare Access login to view files, for the ones that should stay yours even if a link gets out. Without a login, every request gets the same answer whether the link is real or not, so a link cannot even be confirmed. Uploading, keeping and removing take the API token as before.
+A second deployment can require a Cloudflare Access login to view files, for the ones that should stay yours even if a link gets out. Without a login, every request gets the same answer whether the link is real or not, so a link cannot even be confirmed. Uploading, keeping, removing and replacing take the API token as before.
 
 ```sh
 cd worker
@@ -56,7 +56,7 @@ bunx wrangler secret put API_TOKEN --env private   # the same token, or a new on
 Then in the Cloudflare dashboard:
 
 1. Add a custom domain to the `dropcube-private` worker ("Domains and Routes").
-2. Under Zero Trust, Access, Applications, add a self-hosted application for that domain with the path `f/*`, and a policy that allows you. Cover only `/f/`: uploads, keep and remove authenticate with the API token and must stay outside Access.
+2. Under Zero Trust, Access, Applications, add a self-hosted application for that domain with the path `f/*`, and a policy that allows you. Cover only `/f/`: uploads, keep, remove and replace authenticate with the API token and must stay outside Access.
 3. Note the application's Audience (AUD) tag and your team domain (`<team>.cloudflareaccess.com`), and set both on the worker:
 
 ```sh
@@ -98,11 +98,14 @@ dropcube upload --to private x.pdf   # same, to another deployment
 dropcube deployments                 # list the deployments --to can pick
 dropcube keep <link>                 # stop a file expiring, same link
 dropcube remove <link>               # delete an upload early
+dropcube replace <link> new.html     # swap in a new version, same link
 ```
 
 Links print to stdout, one per file in argument order, pipe-friendly for agents. Anyone with a link (and, on a private deployment, your Access login) can view for 30 days, then the file is deleted and the link dies with it. Nobody can enumerate or guess links.
 
-A link on its own only grants viewing that one file. Keeping and removing also take the token, so they go through the CLI, which sends each link's request to the configured deployment it came from.
+A replaced file keeps its link and download name. Unless it was kept, its 30 days start over.
+
+A link on its own only grants viewing that one file. Keeping, removing and replacing also take the token, so they go through the CLI, which sends each link's request to the configured deployment it came from.
 
 A kept file has no deadline and no way to look it up other than the link you already have, so keep the link somewhere you will find it again. Nothing else can list your uploads.
 

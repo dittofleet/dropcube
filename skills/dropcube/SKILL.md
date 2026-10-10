@@ -44,7 +44,7 @@ A private deployment puts a login in front of its links, so opening one takes th
 
 - You can't check a private link by fetching it. Trust the link the upload printed.
 - When the user opens it, they may be asked to sign in first. That's expected.
-- Uploading, keeping and removing work the same as anywhere else.
+- Uploading, keeping, removing and replacing work the same as anywhere else.
 
 ### Links without filenames
 
@@ -55,9 +55,9 @@ Some deployments leave the filename out of links, which then end in a random id 
 - Links stop working after 30 days, when the file is deleted. No need to mention this.
 - On a deployment that isn't private, anyone with the link can open the file, so only post it where the user wants it.
 - You can't list or read back uploads, so keep the link you were given.
-- Uploaded the wrong file or an old version? Upload the right one, then delete the old one with `dropcube remove <link>`.
+- Uploaded the wrong file or an old version? `dropcube replace <link> <file>` swaps in the right one, and the link the user already has shows it. It keeps the old download name.
 - `dropcube keep <link>` stops a file from expiring, and the link stays the same. Only do this when the user asks.
-- `keep` and `remove` work out the deployment from the link itself, so they don't take `--to`.
+- `keep`, `remove` and `replace` work out the deployment from the link itself, so they don't take `--to`.
 
 ## When it fails
 

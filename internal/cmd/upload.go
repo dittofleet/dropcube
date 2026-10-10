@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -75,54 +73,16 @@ func Upload(args []string) error {
 }
 
 func uploadFile(client *http.Client, dep *config.Deployment, path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return "", err
-	}
-	if info.IsDir() {
-		return "", fmt.Errorf("is a directory")
-	}
-
-	name := filepath.Base(path)
 	// Set Path (unescaped) and clear RawPath so URL.String escapes the
 	// filename for us. JoinPath would instead read it as already-escaped and
 	// mangle any name containing a percent sign.
 	target := *dep.URL
-	target.Path = strings.TrimSuffix(dep.URL.Path, "/") + "/" + name
+	target.Path = strings.TrimSuffix(dep.URL.Path, "/") + "/" + filepath.Base(path)
 	target.RawPath = ""
 
-	// A non-nil Body with ContentLength 0 means "unknown length" to net/http,
-	// which sends the request chunked. R2 rejects unknown-length streams, so
-	// empty files need an explicitly empty body.
-	var reqBody io.Reader = &exactReader{r: f, remaining: info.Size()}
-	if info.Size() == 0 {
-		reqBody = http.NoBody
-	}
-	req, err := http.NewRequest(http.MethodPut, target.String(), reqBody)
+	body, err := sendFile(client, dep, http.MethodPut, target.String(), path, http.StatusCreated)
 	if err != nil {
 		return "", err
-	}
-	req.ContentLength = info.Size()
-	req.Header.Set("Authorization", "Bearer "+dep.Token)
-	// The worker defaults absent Content-Type to application/octet-stream;
-	// only send a header when the extension yields something better.
-	if contentType := mime.TypeByExtension(filepath.Ext(name)); contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	body := readBody(resp)
-	if resp.StatusCode != http.StatusCreated {
-		return "", httpError(resp.StatusCode, body)
 	}
 	link := strings.TrimSpace(string(body))
 	if u, err := url.Parse(link); err != nil || !u.IsAbs() || u.Host == "" {

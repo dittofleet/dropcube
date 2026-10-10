@@ -146,9 +146,9 @@ func (c *Config) validate(path string) error {
 	if err := c.Deployment.validate(path, ""); err != nil {
 		return err
 	}
-	// keep and remove pick a deployment by the host a link came from, so
-	// two deployments on one origin would leave them guessing which token
-	// to send.
+	// keep, remove and replace pick a deployment by the host a link came
+	// from, so two deployments on one origin would leave them guessing
+	// which token to send.
 	origins := map[string]string{Origin(c.URL): DefaultName}
 	for _, name := range slices.Sorted(maps.Keys(c.Deployments)) {
 		d := c.Deployments[name]
