@@ -110,6 +110,41 @@ describe("public mode", () => {
     expect((await call("GET", link)).status).toBe(404);
   });
 
+  test("replace swaps the contents behind a link and keeps its name", async () => {
+    const { env, call } = setup({ PUBLIC_LINKS: "true" });
+    const link = await upload(call);
+    const key = link.slice("/f/".length);
+    const replace = (headers) =>
+      call("POST", `/replace/${key}`, { ...headers, "Content-Type": "text/html" }, "<p>new</p>");
+
+    expect((await replace({})).status).toBe(401);
+    expect((await replace(auth)).status).toBe(200);
+    const view = await call("GET", link);
+    expect(await view.text()).toBe("<p>new</p>");
+    expect(view.headers.get("Content-Type")).toBe("text/html");
+    expect(view.headers.get("Content-Disposition")).toContain('filename="report.txt"');
+    expect(view.headers.get("Cache-Control")).toBe("private, no-cache");
+
+    // A kept file is replaced where it is, and a copy an interrupted keep
+    // left in the expiring bucket goes, so it cannot serve over the new one.
+    expect((await call("POST", `/keep/${key}`, auth)).status).toBe(200);
+    await env.BUCKET.put(key, "stale");
+    expect((await replace(auth)).status).toBe(200);
+    expect(env.BUCKET.store.has(key)).toBe(false);
+    expect(await (await call("GET", link)).text()).toBe("<p>new</p>");
+  });
+
+  test("replace does not bring back a file that is gone", async () => {
+    const { env, call } = setup({ PUBLIC_LINKS: "true" });
+    const link = await upload(call);
+    const key = link.slice("/f/".length);
+    env.BUCKET.store.get(key).uploaded = new Date(Date.now() - 31 * 86400 * 1000);
+    expect((await call("POST", `/replace/${key}`, auth, "new")).status).toBe(404);
+    expect((await call("POST", "/replace/0123456789abcdef/report.txt", auth, "new")).status).toBe(404);
+    expect(env.BUCKET.store.size).toBe(1);
+    expect(env.KEEP.store.size).toBe(0);
+  });
+
   test("actions are not under the view path", async () => {
     const { call } = setup({ PUBLIC_LINKS: "true" });
     const link = await upload(call);

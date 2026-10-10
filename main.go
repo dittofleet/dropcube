@@ -27,6 +27,8 @@ Commands:
   deployments        List the deployments --to can pick, with what each is for
   keep <link>...     Stop uploads expiring, keeping the same links
   remove <link>...   Delete uploads by their view links
+  replace <link> <file>
+                     Swap the file behind a link for another, keeping the link
   version            Print the installed version
   update             Download and install the latest version
   uninstall [--yes]  Remove binary, config, and update cache
@@ -73,6 +75,8 @@ func dispatch(dropcube clikit.App, args []string) error {
 		return cmd.Keep(args[1:])
 	case "remove":
 		return cmd.Remove(args[1:])
+	case "replace":
+		return cmd.Replace(args[1:])
 	case "deployments":
 		return cmd.Deployments(args[1:])
 	case "update":

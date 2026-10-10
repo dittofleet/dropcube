@@ -1,9 +1,10 @@
 // dropcube: write-only file drop for agents, private viewing for me.
 //
-// PUT  /<filename>   (Authorization: Bearer <API_TOKEN>)  -> view URL
-// GET  /f/<key>      (Access login, or nothing in public mode)  -> file contents
-// POST /keep/<key>   (Authorization: Bearer <API_TOKEN>)  -> stop it expiring
-// POST /remove/<key> (Authorization: Bearer <API_TOKEN>)  -> delete the file
+// PUT  /<filename>    (Authorization: Bearer <API_TOKEN>)  -> view URL
+// GET  /f/<key>       (Access login, or nothing in public mode)  -> file contents
+// POST /keep/<key>    (Authorization: Bearer <API_TOKEN>)  -> stop it expiring
+// POST /remove/<key>  (Authorization: Bearer <API_TOKEN>)  -> delete the file
+// POST /replace/<key> (Authorization: Bearer <API_TOKEN>)  -> swap in the body
 //
 // <key> is whatever follows /f/ in a link: "<id>/<filename>", or "<id>"
 // alone when ID_ONLY_LINKS is set and the filename should stay out of links.
@@ -12,7 +13,7 @@
 // Viewing takes a Cloudflare Access login unless PUBLIC_LINKS is set, in
 // which case holding a link is enough. Every route checks its credential
 // before it looks at the path, so without one a real link, a wrong filename
-// and a made-up id all get the same answer. Keep and remove sit outside /f/
+// and a made-up id all get the same answer. The actions sit outside /f/
 // so an Access policy on /f/* covers viewing and nothing else.
 //
 // Uploads live for 30 days, then the bucket's lifecycle rule deletes them
@@ -25,12 +26,9 @@
 const DAY = 24 * 3600;
 // Keep equal to the bucket's lifecycle rule (see README setup).
 const RETENTION_DAYS = 30;
-// A kept file has no deadline to cache against, but it can still be
-// removed, so pick a ceiling that a removal does not have to outwait.
-const KEEP_MAX_AGE = DAY;
 const VIEW_PREFIX = "/f/";
 // Routes that act on a file, as POST /<action>/<key>.
-const ACTIONS = { keep: handleKeep, remove: handleRemove };
+const ACTIONS = { keep: handleKeep, remove: handleRemove, replace: handleReplace };
 // How long fetched Access signing keys are trusted, and the least time
 // between fetch attempts (see accessKey).
 const ACCESS_KEYS_TTL = 3600 * 1000;
@@ -102,12 +100,7 @@ async function handleUpload(request, url, env) {
   const [key, path] = flag(env, "ID_ONLY_LINKS")
     ? [id, id]
     : [`${id}/${filename}`, `${id}/${encodeURIComponent(filename)}`];
-  await env.BUCKET.put(key, request.body, {
-    httpMetadata: {
-      contentType: request.headers.get("Content-Type") ?? "application/octet-stream",
-    },
-    customMetadata: { filename },
-  });
+  await store(env.BUCKET, key, request, { filename });
 
   return new Response(`${url.origin}${VIEW_PREFIX}${path}\n`, {
     status: 201,
@@ -133,7 +126,7 @@ async function handleView(request, url, env, ctx) {
   const key = safeDecode(url.pathname.slice(VIEW_PREFIX.length));
   if (key === null) return new Response("not found\n", { status: 404 });
 
-  const { object, maxAge, status } = await find(key, request.headers, env);
+  const { object, status } = await find(key, request.headers, env);
   if (!object) return new Response("gone\n", { status });
 
   // Files uploaded before id-only links existed carry their name only in
@@ -143,13 +136,11 @@ async function handleView(request, url, env, ctx) {
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
   headers.set("X-Content-Type-Options", "nosniff");
-  // A private file must go back through the login check on every view, or
-  // the browser would keep showing it after the Access session ends. The
-  // etag still makes an unchanged file a cheap 304.
-  headers.set(
-    "Cache-Control",
-    isPublic ? `private, max-age=${maxAge}` : "private, no-cache",
-  );
+  // Browsers check back on every view, so they see a file once it is
+  // replaced or removed, and a private one goes back through the login
+  // check rather than outliving the Access session. The etag still makes
+  // an unchanged file a cheap 304.
+  headers.set("Cache-Control", "private, no-cache");
   // filename is already sanitized at upload time, but encode at the header
   // layer anyway so Content-Disposition stays valid whatever the sanitizer
   // allows in the future.
@@ -174,13 +165,10 @@ async function handleView(request, url, env, ctx) {
 // still awaiting the sweep serves from KEEP rather than reading as gone.
 async function find(key, headers, env) {
   const expiring = await env.BUCKET.get(key, { onlyIf: headers });
-  if (expiring) {
-    const remaining = timeLeft(expiring);
-    if (remaining > 0) return { object: expiring, maxAge: remaining };
-  }
+  if (expiring && timeLeft(expiring) > 0) return { object: expiring };
 
   const kept = await env.KEEP.get(key, { onlyIf: headers });
-  if (kept) return { object: kept, maxAge: KEEP_MAX_AGE };
+  if (kept) return { object: kept };
 
   // A copy left in the expiring bucket proves the file was once real, so
   // say it is over rather than that it never existed.
@@ -200,12 +188,39 @@ async function handleAction(request, rawKey, env, handler) {
   if (!authorized(request, env)) return new Response("unauthorized\n", { status: 401 });
   const key = safeDecode(rawKey);
   if (!key) return new Response("not found\n", { status: 404 });
-  return handler(key, env);
+  return handler(key, env, request);
 }
 
 async function handleRemove(key, env) {
   await Promise.all([env.BUCKET.delete(key), env.KEEP.delete(key)]);
   return new Response("removed\n", { status: 200 });
+}
+
+// Overwrites a file in place, so the link it was shared with shows the new
+// contents. It stays in whichever bucket it was in, and keeps its download
+// name. A replaced expiring file starts a fresh 30 days, because the
+// lifecycle rule counts from when the object was last written.
+//
+// A file in both buckets is one an interrupted keep left behind. Finishing
+// that keep here stops the old expiring copy from serving over the new one.
+async function handleReplace(key, env, request) {
+  const [kept, expiring] = await Promise.all([env.KEEP.head(key), env.BUCKET.head(key)]);
+  if (!kept && (!expiring || timeLeft(expiring) <= 0))
+    return new Response("gone\n", { status: 404 });
+
+  await store(kept ? env.KEEP : env.BUCKET, key, request, (kept ?? expiring).customMetadata);
+  if (kept && expiring) await env.BUCKET.delete(key);
+  return new Response("replaced\n", { status: 200 });
+}
+
+// Writes a request's body as the file at key.
+function store(bucket, key, request, customMetadata) {
+  return bucket.put(key, request.body, {
+    httpMetadata: {
+      contentType: request.headers.get("Content-Type") ?? "application/octet-stream",
+    },
+    customMetadata,
+  });
 }
 
 // Copy to KEEP before deleting from BUCKET, so an interrupted keep leaves

@@ -53,36 +53,36 @@ func linkAction(args []string, action string, timeout time.Duration) error {
 }
 
 func actOnLink(client *http.Client, cfg *config.Config, link, action string) error {
+	dep, target, err := actionTarget(cfg, link, action)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, target, nil)
+	if err != nil {
+		return err
+	}
+	_, err = send(client, dep, req, http.StatusOK)
+	return err
+}
+
+// actionTarget turns a link's /f/<key> into /<action>/<key> on the
+// deployment the link came from.
+func actionTarget(cfg *config.Config, link, action string) (*config.Deployment, string, error) {
 	u, err := url.Parse(strings.TrimSpace(link))
 	if err != nil || !u.IsAbs() || u.Host == "" {
-		return fmt.Errorf("not a link")
+		return nil, "", fmt.Errorf("not a link")
 	}
 	key, ok := strings.CutPrefix(strings.TrimSuffix(u.EscapedPath(), "/"), "/f/")
 	if !ok || key == "" {
-		return fmt.Errorf("not a dropcube link")
+		return nil, "", fmt.Errorf("not a dropcube link")
 	}
 	// The token goes along with the request, so only ever send it to the
 	// worker it belongs to, never to whatever host a pasted link names.
 	dep, err := deploymentFor(cfg, u)
 	if err != nil {
-		return err
+		return nil, "", err
 	}
-
-	target := config.Origin(dep.URL) + "/" + action + "/" + key
-	req, err := http.NewRequest(http.MethodPost, target, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+dep.Token)
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if body := readBody(resp); resp.StatusCode != http.StatusOK {
-		return httpError(resp.StatusCode, body)
-	}
-	return nil
+	return dep, config.Origin(dep.URL) + "/" + action + "/" + key, nil
 }
 
 func deploymentFor(cfg *config.Config, link *url.URL) (*config.Deployment, error) {
