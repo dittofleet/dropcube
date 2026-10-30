@@ -3,7 +3,7 @@ module github.com/dittofleet/dropcube
 go 1.26.5
 
 require (
-	github.com/dittofleet/go-cli-kit v0.5.0
+	github.com/dittofleet/go-cli-kit v0.6.0
 	golang.org/x/term v0.43.0
 )
 
