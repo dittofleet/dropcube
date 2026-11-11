@@ -40,11 +40,28 @@ func sendFile(client *http.Client, dep *config.Deployment, method, target, path 
 	}
 	req.ContentLength = info.Size()
 	// The worker defaults absent Content-Type to application/octet-stream;
-	// only send a header when the extension yields something better.
-	if contentType := mime.TypeByExtension(filepath.Ext(path)); contentType != "" {
+	// only send a header when there is something better.
+	if contentType := detectType(f, path); contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 	return send(client, dep, req, want)
+}
+
+// detectType names a file's type from its extension or, for one the system
+// doesn't know, as text if that is what it holds. Which extensions are known
+// differs by system (Windows has no .log or .md), and an unknown one would
+// otherwise download as bytes instead of opening in the browser. All text
+// counts as plain, as a .md often opens with an HTML tag.
+func detectType(f io.ReaderAt, path string) string {
+	if contentType := mime.TypeByExtension(filepath.Ext(path)); contentType != "" {
+		return contentType
+	}
+	head := make([]byte, 512)
+	n, _ := f.ReadAt(head, 0)
+	if kind, charset, _ := strings.Cut(http.DetectContentType(head[:n]), ";"); strings.HasPrefix(kind, "text/") {
+		return "text/plain;" + charset
+	}
+	return ""
 }
 
 // send makes req with the deployment's token. Anything but the wanted
